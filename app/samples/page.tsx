@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 import StatusBadge from '@/app/components/StatusBadge'
 
@@ -14,18 +13,12 @@ export default function SamplesPage() {
     async function fetchSamples() {
       try {
         setLoading(true)
-        const { data, error } = await supabase
-          .from('samples')
-          .select(`
-            *,
-            product:products(*),
-            sales_rep:users(*),
-            visits:visits(*)
-          `)
-          .order('created_at', { ascending: false })
-
-        if (error) throw error
-        setSamples(data || [])
+        // Data comes from the API route (centralized error handling; auth checks can
+        // be added server-side in v2) instead of calling Supabase from the client.
+        const res = await fetch('/api/samples')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load samples')
+        setSamples(json.data || [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load samples')
       } finally {

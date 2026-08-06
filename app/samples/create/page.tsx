@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
-import { useState } from 'react'
-import { CATEGORIES, PRODUCT_CATALOG, getCategoryForProduct } from '@/lib/catalog'
+import { useEffect, useState } from 'react'
+
+// Products now live in the `products` table (seeded from lib/catalog.ts) and are
+// referenced by their real UUID `product_id` — NOT by a free-text product name.
+// This is what makes the product:products(*) join in the list/detail pages resolve.
 
 export default function CreateSamplePage() {
   const [formData, setFormData] = useState({
@@ -15,12 +17,57 @@ export default function CreateSamplePage() {
     product_id: '',
     sample_submission_date: '',
     location: '',
-    next_visit_date: ''
+    next_visit_date: '',
+    sales_rep_id: ''
   })
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<boolean>(false)
+
+  // Products loaded from the API GET (product_id = UUID, product_name + category).
+  // The dropdown options below are built from these so the submitted product_id is a real FK value.
+  const [products, setProducts] = useState<Array<{ product_id: string; product_name: string; category: string | null }>>([])
+  const [categories, setCategories] = useState<string[]>([])
+
+  // Sales reps loaded from `/api/users` for the rep dropdown. PRE-AUTH: in v2 each
+  // rep gets their own login and this dropdown is replaced by session-based attribution.
+  const [salesReps, setSalesReps] = useState<Array<{ user_id: string; user_name: string }>>([])
+
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        // Products come from the API route (app/api/products) so the dropdown
+        // options carry real product_id UUIDs.
+        const res = await fetch('/api/products')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load products')
+
+        const data = json.data || []
+        setProducts(data)
+        // Distinct categories drive the Category dropdown.
+        setCategories(Array.from(new Set(data.map((p: any) => p.category).filter(Boolean) as string[])))
+      } catch (err) {
+        console.error('Failed to load products:', err instanceof Error ? err.message : err)
+      }
+    }
+    loadProducts()
+  }, [])
+
+  // Load the rep list once on mount so the Sales Rep dropdown always has options.
+  useEffect(() => {
+    async function loadSalesReps() {
+      try {
+        const res = await fetch('/api/users')
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load sales reps')
+        setSalesReps(json.data || [])
+      } catch (err) {
+        console.error('Failed to load sales reps:', err instanceof Error ? err.message : err)
+      }
+    }
+    loadSalesReps()
+  }, [])
 
   // Handle form input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -31,13 +78,16 @@ export default function CreateSamplePage() {
     }))
   }
 
-  // When a product is selected, auto-fill its respective category
+  // When a product is selected, store its UUID and auto-fill its category.
+  // (category is denormalized onto the sample row so the list/detail can show it
+  // without a second join — kept in sync with products.category here.)
   const handleProductChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const { value } = e.target
+    const product = products.find(p => p.product_id === value)
     setFormData(prev => ({
       ...prev,
       product_id: value,
-      category: value ? getCategoryForProduct(value) || prev.category : prev.category
+      category: product?.category || prev.category
     }))
   }
 
@@ -53,9 +103,11 @@ export default function CreateSamplePage() {
         throw new Error('Please fill in all required fields')
       }
 
-      const { data, error } = await supabase
-        .from('samples')
-        .insert({
+      // Create via the API route so validation + auth checks happen server-side.
+      const res = await fetch('/api/samples', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           party_name: formData.party_name,
           category: formData.category || null,
           poc_name: formData.poc_name || null,
@@ -63,13 +115,16 @@ export default function CreateSamplePage() {
           designation: formData.designation || null,
           product_id: formData.product_id,
           sample_submission_date: formData.sample_submission_date,
-          // sales_rep_id will be set from the logged-in account once auth is added (v2)
+          // sales_rep_id comes from the rep dropdown (Step 5). POST stores it; it's
+          // replaced by session-based attribution once per-rep auth ships in v2.
+          sales_rep_id: formData.sales_rep_id || null,
           location: formData.location || null,
           next_visit_date: formData.next_visit_date || null
           // output defaults to 'Pending' per specification
         })
-
-      if (error) throw error
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to create sample')
 
       setSuccess(true)
       // Reset form after successful submission
@@ -81,6 +136,7 @@ export default function CreateSamplePage() {
         designation: '',
         product_id: '',
         sample_submission_date: '',
+        sales_rep_id: '',
         location: '',
         next_visit_date: ''
       })
@@ -120,6 +176,23 @@ export default function CreateSamplePage() {
                 />
               </div>
 
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium mb-2">Sales Rep</label>
+                <select
+                  name="sales_rep_id"
+                  value={formData.sales_rep_id}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a sales rep</option>
+                  {/* Reps loaded from /api/users (seeded identities). PRE-AUTH:
+                      replaced by the logged-in account in v2. */}
+                  {salesReps.map(rep => (
+                    <option key={rep.user_id} value={rep.user_id}>{rep.user_name}</option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium mb-2">Category</label>
                 <select
@@ -129,7 +202,7 @@ export default function CreateSamplePage() {
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select a category</option>
-                  {CATEGORIES.map(category => (
+                  {categories.map(category => (
                     <option key={category} value={category}>{category}</option>
                   ))}
                 </select>
@@ -203,14 +276,10 @@ export default function CreateSamplePage() {
                   className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select a product</option>
-                  {PRODUCT_CATALOG.map(group => (
-                    <optgroup key={group.category} label={group.category}>
-                      {group.products.map(product => (
-                        <option key={product} value={product}>
-                          {product}
-                        </option>
-                      ))}
-                    </optgroup>
+                  {products.map(product => (
+                    <option key={product.product_id} value={product.product_id}>
+                      {product.product_name}
+                    </option>
                   ))}
                 </select>
               </div>

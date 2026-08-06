@@ -30,8 +30,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Validate required fields
-    const requiredFields = ['party_name', 'product_id', 'sample_submission_date', 'sales_rep_id']
+    // Validate required fields. NOTE: sales_rep_id is intentionally NOT required yet —
+    // auth is deferred to v2, and the create form adds a rep via a dropdown in Step 5.
+    const requiredFields = ['party_name', 'product_id', 'sample_submission_date']
     for (const field of requiredFields) {
       if (!body[field]) {
         return NextResponse.json(
@@ -51,7 +52,8 @@ export async function POST(request: NextRequest) {
         designation: body.designation || null,
         product_id: body.product_id,
         sample_submission_date: body.sample_submission_date,
-        sales_rep_id: body.sales_rep_id,
+        // sales_rep_id is nullable until auth ships (Step 5 adds the dropdown).
+        sales_rep_id: body.sales_rep_id || null,
         location: body.location || null,
         // output defaults to 'Pending' per specification
         next_visit_date: body.next_visit_date || null

@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import StatusBadge from '@/app/components/StatusBadge'
@@ -14,6 +13,16 @@ export default function SampleDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Shared loader: fetch one sample with its joins from the API route.
+  // (product:products(*) and sales_rep:users(*) resolve because product_id /
+  //  sales_rep_id hold real UUIDs that match seeded rows.)
+  const loadSample = async (id: string) => {
+    const res = await fetch(`/api/samples/${id}`)
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error || 'Failed to load sample')
+    return json.data
+  }
+
   // Fetch sample data
   useEffect(() => {
     if (!sample_id) return
@@ -21,18 +30,7 @@ export default function SampleDetailPage() {
     const fetchSample = async () => {
       try {
         setLoading(true)
-        const { data, error } = await supabase
-          .from('samples')
-          .select(`
-            *,
-            product:products(*),
-            sales_rep:users(*),
-            visits:visits(*)
-          `)
-          .eq('sample_id', sample_id)
-          .single()
-
-        if (error) throw error
+        const data = await loadSample(sample_id)
         setSample(data)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load sample')
@@ -58,39 +56,19 @@ export default function SampleDetailPage() {
   if (error) return <div className="text-center py-24 text-red-500">{error}</div>
   if (!sample) return <div className="text-center py-24 text-gray-500">No sample found</div>
 
-  // Handle status update
+  // Handle status update — PUT /api/samples/:id (clears next_visit_date on final outcomes)
   const handleUpdateStatus = async (newStatus: string) => {
     try {
-      const { error } = await supabase
-        .from('samples')
-        .update({
-          output: newStatus,
-          next_visit_date:
-            newStatus === 'Onboard' ||
-            newStatus === 'Closed' ||
-            newStatus === 'Not Interested'
-              ? null
-              : undefined,
-          updated_at: new Date().toISOString()
-        })
-        .eq('sample_id', sample_id)
+      const res = await fetch(`/api/samples/${sample_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output: newStatus })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to update status')
 
-      if (error) throw error
-
-      // Refetch to get updated data
-      const { data, error: fetchError } = await supabase
-        .from('samples')
-        .select(`
-          *,
-          product:products(*),
-          sales_rep:users(*),
-          visits:visits(*)
-        `)
-        .eq('sample_id', sample_id)
-        .single()
-
-      if (fetchError) throw fetchError
-      setSample(data)
+      // Reload so the joined product / sales_rep / visits stay fresh.
+      setSample(await loadSample(sample_id))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -117,48 +95,24 @@ export default function SampleDetailPage() {
     }
 
     try {
-      // Get the highest visit number for this sample
-      const { data: visitCountData, error: countError } = await supabase
-        .from('visits')
-        .select('visit_number')
-        .eq('sample_id', sample_id)
-        .order('visit_number', { ascending: false })
-        .limit(1)
-
-      if (countError) throw countError
-
-      const highestVisitNumber = visitCountData[0]?.visit_number ?? 0
-      const nextVisitNumber = Number(highestVisitNumber) + 1
-
-      const { error: insertError } = await supabase
-        .from('visits')
-        .insert({
-          sample_id: sample_id,
+      // POST /api/visits computes the next visit_number server-side.
+      const res = await fetch('/api/visits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sample_id,
           visit_date: visitDate,
-          feedback: feedback || null,
-          visit_number: nextVisitNumber
+          feedback: feedback || null
         })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to add visit')
 
-      if (insertError) throw insertError
-
-      // Reset form
+      // Reset form, then reload to show the new visit.
       visitDateInput.value = ''
       feedbackInput.value = ''
 
-      // Refetch to show new visit
-      const { data, error: fetchError } = await supabase
-        .from('samples')
-        .select(`
-          *,
-          product:products(*),
-          sales_rep:users(*),
-          visits:visits(*)
-        `)
-        .eq('sample_id', sample_id)
-        .single()
-
-      if (fetchError) throw fetchError
-      setSample(data)
+      setSample(await loadSample(sample_id))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -276,7 +230,7 @@ export default function SampleDetailPage() {
               <label className="block text-sm font-medium mb-2">Feedback (Notes)</label>
               <textarea
                 id="visit-feedback"
-                rows="4"
+                rows={4}
                 className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               ></textarea>
             </div>
