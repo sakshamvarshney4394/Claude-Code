@@ -1,3 +1,69 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4 entry point — NOT the v3 directive syntax. */
+@import "tailwindcss";
+
+/* Design tokens (Flat design system). Tailwind v4 registers these via @theme.
+   Colors reuse Tailwind's default scale where the design system maps to it. */
+@theme {
+  --font-sans: 'Outfit', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Font weights per the system: headings bold/extra-bold, labels semibold. */
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+}
+
+/* Base reset aligned with the flat system: crisp edges, no artificial depth. */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900;
+    font-family: var(--font-sans);
+  }
+
+  /* Deterministic focus state: hard solid ring, since we have no shadows. */
+  :focus-visible {
+    @apply ring-2 ring-blue-500 ring-offset-2;
+  }
+}
+
+/* Flat-input base: gray-100 fill, no border; focus turns white + border-2 primary.
+   Bulk-applies to the common input/select/textarea classes used across forms. */
+@layer components {
+  .input {
+    @apply w-full bg-gray-100 text-gray-900 rounded-md px-3 py-2.5 transition-colors duration-200;
+    border: 0;
+  }
+  .input:focus {
+    @apply bg-white;
+    outline: none;
+    border: 2px solid #3b82f6;
+  }
+  .input:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md font-semibold transition-all duration-200 hover:scale-105;
+  }
+  .btn:focus-visible {
+    @apply ring-2 ring-blue-500 ring-offset-2;
+  }
+  .btn-primary {
+    @apply bg-blue-500 text-white hover:bg-blue-600;
+  }
+  .btn-secondary {
+    @apply bg-gray-100 text-gray-900 hover:bg-gray-200;
+  }
+  .btn-danger {
+    @apply bg-red-500 text-white hover:bg-red-600;
+  }
+
+  .card {
+    @apply bg-white rounded-lg;
+    box-shadow: none;
+  }
+}

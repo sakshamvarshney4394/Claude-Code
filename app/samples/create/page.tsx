@@ -3,10 +3,6 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-// Products now live in the `products` table (seeded from lib/catalog.ts) and are
-// referenced by their real UUID `product_id` — NOT by a free-text product name.
-// This is what makes the product:products(*) join in the list/detail pages resolve.
-
 export default function CreateSamplePage() {
   const [formData, setFormData] = useState({
     party_name: '',
@@ -148,173 +144,170 @@ export default function CreateSamplePage() {
   }
 
   return (
-    <div>
+    <div className="py-6">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Create New Sample</h1>
+        <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900">Create New Sample</h1>
         <Link href="/samples" className="text-gray-600 hover:text-gray-800 text-sm">
           ← Back to All Samples
         </Link>
       </div>
 
-      {error && <div className="bg-rose-100 border border-rose-400 text-rose-700 px-4 py-3 rounded-lg mb-4">{error}</div>}
-      {success && <div className="bg-emerald-100 border border-emerald-400 text-emerald-700 px-4 py-3 rounded-lg mb-4">Sample created successfully!</div>}
+      {error && <div className="bg-rose-100 border-2 border-rose-400 text-rose-800 px-4 py-3 rounded-md mb-4">{error}</div>}
+      {success && <div className="bg-emerald-100 border-2 border-emerald-400 text-emerald-800 px-4 py-3 rounded-md mb-4">Sample created successfully!</div>}
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 max-w-3xl divide-y divide-gray-100">
-        <div className="p-6 space-y-6">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wide text-gray-400 mb-4">Customer</h3>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium mb-2">Party Name *</label>
-                <input
-                  type="text"
-                  name="party_name"
-                  value={formData.party_name}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+      <form onSubmit={handleSubmit} className="max-w-md w-full space-y-6 lg:max-w-5xl">
+        {/* Customer */}
+        <section className="bg-white rounded-lg p-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Customer</h3>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">Party Name *</label>
+              <input
+                type="text"
+                name="party_name"
+                value={formData.party_name}
+                onChange={handleChange}
+                required
+                className="input"
+              />
+            </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium mb-2">Sales Rep</label>
-                <select
-                  name="sales_rep_id"
-                  value={formData.sales_rep_id}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a sales rep</option>
-                  {/* Reps loaded from /api/users (seeded identities). PRE-AUTH:
-                      replaced by the logged-in account in v2. */}
-                  {salesReps.map(rep => (
-                    <option key={rep.user_id} value={rep.user_id}>{rep.user_name}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">Sales Rep</label>
+              <select
+                name="sales_rep_id"
+                value={formData.sales_rep_id}
+                onChange={handleChange}
+                className="input"
+              >
+                <option value="">Select a sales rep</option>
+                {/* Reps loaded from /api/users (seeded identities). PRE-AUTH:
+                    replaced by the logged-in account in v2. */}
+                {salesReps.map(rep => (
+                  <option key={rep.user_id} value={rep.user_id}>{rep.user_name}</option>
+                ))}
+              </select>
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Category</label>
-                <select
-                  name="category"
-                  value={formData.category}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a category</option>
-                  {categories.map(category => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Category</label>
+              <select
+                name="category"
+                value={formData.category}
+                onChange={handleChange}
+                className="input"
+              >
+                <option value="">Select a category</option>
+                {categories.map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Location</label>
-                <input
-                  type="text"
-                  name="location"
-                  value={formData.location}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Location</label>
+              <input
+                type="text"
+                name="location"
+                value={formData.location}
+                onChange={handleChange}
+                className="input"
+              />
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="p-6 space-y-6">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wide text-gray-400 mb-4">Point of Contact</h3>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium mb-2">Name</label>
-                <input
-                  type="text"
-                  name="poc_name"
-                  value={formData.poc_name}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+        {/* Point of Contact */}
+        <section className="bg-gray-100 rounded-lg p-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Point of Contact</h3>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium mb-2">Name</label>
+              <input
+                type="text"
+                name="poc_name"
+                value={formData.poc_name}
+                onChange={handleChange}
+                className="input"
+              />
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Contact (Phone/Email)</label>
-                <input
-                  type="text"
-                  name="poc_contact"
-                  value={formData.poc_contact}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Contact (Phone/Email)</label>
+              <input
+                type="text"
+                name="poc_contact"
+                value={formData.poc_contact}
+                onChange={handleChange}
+                className="input"
+              />
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Designation</label>
-                <input
-                  type="text"
-                  name="designation"
-                  value={formData.designation}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">Designation</label>
+              <input
+                type="text"
+                name="designation"
+                value={formData.designation}
+                onChange={handleChange}
+                className="input"
+              />
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="p-6 space-y-6">
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wide text-gray-400 mb-4">Sample Details</h3>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium mb-2">Product *</label>
-                <select
-                  name="product_id"
-                  value={formData.product_id}
-                  onChange={handleProductChange}
-                  required
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a product</option>
-                  {products.map(product => (
-                    <option key={product.product_id} value={product.product_id}>
-                      {product.product_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Sample Details */}
+        <section className="bg-white rounded-lg p-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Sample Details</h3>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">Product *</label>
+              <select
+                name="product_id"
+                value={formData.product_id}
+                onChange={handleProductChange}
+                required
+                className="input"
+              >
+                <option value="">Select a product</option>
+                {products.map(product => (
+                  <option key={product.product_id} value={product.product_id}>
+                    {product.product_name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Sample Submission Date *</label>
-                <input
-                  type="date"
-                  name="sample_submission_date"
-                  value={formData.sample_submission_date}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Sample Submission Date *</label>
+              <input
+                type="date"
+                name="sample_submission_date"
+                value={formData.sample_submission_date}
+                onChange={handleChange}
+                required
+                className="input"
+              />
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Next Visit Date</label>
-                <input
-                  type="date"
-                  name="next_visit_date"
-                  value={formData.next_visit_date}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Next Visit Date</label>
+              <input
+                type="date"
+                name="next_visit_date"
+                value={formData.next_visit_date}
+                onChange={handleChange}
+                className="input"
+              />
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="p-6">
+        <div className="p-2">
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50 font-semibold"
+            className="btn btn-primary w-full text-base px-4 py-3"
           >
             {loading ? 'Creating...' : 'Create Sample'}
           </button>
