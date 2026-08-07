@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import * as XLSX from 'xlsx'
 import StatusBadge from '@/app/components/StatusBadge'
-import { Plus, Trash2, Eye, ArrowRight, Inbox } from 'lucide-react'
+import { formatDate } from '@/lib/format'
+import { Download, Plus, Trash2, Eye, ArrowRight, Inbox } from 'lucide-react'
 
 type Sample = {
   sample_id: string;
@@ -31,6 +33,8 @@ export default function SamplesPage() {
   const [error, setError] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false) // For clearing in-progress state
   const [clearError, setClearError] = useState<string | null>(null) // For clear operation errors
+  const [deletingId, setDeletingId] = useState<string | null>(null) // Sample being deleted
+  const [rowError, setRowError] = useState<string | null>(null) // Per-row delete errors
 
   useEffect(() => {
     async function fetchSamples() {
@@ -52,6 +56,7 @@ export default function SamplesPage() {
 
   // Handle clearing all samples and visits
   async function handleClearAll() {
+    // Confirmation guard: never fire without warning (prevents accidental data loss).
     const sampleCount = samples.length
     if (!window.confirm(`Delete all ${sampleCount} samples and their visits? This cannot be undone.`)) {
       return
@@ -80,6 +85,56 @@ export default function SamplesPage() {
     }
   }
 
+  // Handle deleting a single sample (and its visits — cascade handled server-side).
+  async function handleDeleteSample(sampleId: string, partyName: string) {
+    // Confirmation dialog before any destructive delete — never delete on single click.
+    if (!window.confirm(`Delete this sample and all its visit history? This cannot be undone.`)) {
+      return
+    }
+
+    setDeletingId(sampleId)
+    setRowError(null)
+
+    try {
+      const res = await fetch(`/api/samples/${sampleId}`, {
+        method: 'DELETE',
+      })
+
+      const json = await res.json()
+
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to delete sample')
+      }
+
+      // Remove the deleted sample from the local list.
+      setSamples(prev => prev.filter(s => s.sample_id !== sampleId))
+    } catch (err) {
+      setRowError(`Could not delete "${partyName}": ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // Feature 3: Export current samples to an .xlsx file, client-side only.
+  // Columns match the table (Sample ID, Party Name, Product, Sales Rep,
+  // Submitted, Visit count, Status). Reuses already-loaded data — no backend call.
+  function handleExport() {
+    const rows = samples.map(s => ({
+      'Sample ID': s.sample_id,
+      'Party Name': s.party_name,
+      'Product': s.product?.product_name || '—',
+      'Sales Rep': s.sales_rep?.user_name || '—',
+      'Submitted': s.sample_submission_date ? new Date(s.sample_submission_date).toISOString().slice(0, 10) : '—',
+      'Visits': s.visits?.length || 0,
+      'Status': s.output,
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Samples')
+    XLSX.writeFile(wb, `samples-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-500 gap-3">
@@ -104,7 +159,7 @@ export default function SamplesPage() {
 
   return (
     <div className="py-6 space-y-6">
-      {/* Page header + actions */}
+      {/* Page header + actions (New Sample lives in the top bar; keep actions here lean) */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900">All Samples</h1>
@@ -113,6 +168,14 @@ export default function SamplesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleExport}
+            disabled={samples.length === 0}
+            className="btn btn-secondary text-sm px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" />
+            Export to Excel
+          </button>
           {samples.length > 0 && (
             <button
               onClick={handleClearAll}
@@ -132,17 +195,13 @@ export default function SamplesPage() {
               )}
             </button>
           )}
-          <Link href="/samples/create" className="btn btn-primary text-sm px-4 py-2">
-            <Plus className="w-4 h-4" />
-            New Sample
-          </Link>
         </div>
       </div>
 
-      {clearError && (
+      {(clearError || rowError) && (
         <div className="bg-rose-100 border-2 border-rose-400 text-rose-800 px-4 py-3 rounded-md">
-          <p className="font-medium">Failed to clear data</p>
-          <p className="text-sm">{clearError}</p>
+          <p className="font-medium">Something went wrong</p>
+          <p className="text-sm">{clearError || rowError}</p>
         </div>
       )}
 
@@ -200,18 +259,37 @@ export default function SamplesPage() {
                       </td>
                       <td className="px-6 py-4 text-gray-700">{sample.sales_rep?.user_name || '—'}</td>
                       <td className="px-6 py-4 text-gray-600">
-                        {sample.sample_submission_date ? new Date(sample.sample_submission_date).toLocaleDateString() : '—'}
+                        {formatDate(sample.sample_submission_date)}
                       </td>
                       <td className="px-6 py-4 text-gray-600">{sample.visits?.length || 0}</td>
                       <td className="px-6 py-4"><StatusBadge status={sample.output} /></td>
                       <td className="px-6 py-4 text-right">
-                        <Link
-                          href={`/samples/${sample.sample_id}`}
-                          className="inline-flex items-center gap-1 font-semibold text-blue-500 hover:text-blue-600 transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                          View
-                        </Link>
+                        <div className="inline-flex items-center gap-3">
+                          <Link
+                            href={`/samples/${sample.sample_id}`}
+                            className="inline-flex items-center gap-1 font-semibold text-blue-500 hover:text-blue-600 transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                            View
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteSample(sample.sample_id, sample.party_name)}
+                            disabled={deletingId === sample.sample_id}
+                            className="inline-flex items-center gap-1 font-semibold text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
+                          >
+                            {deletingId === sample.sample_id ? (
+                              <span className="flex items-center gap-1">
+                                <div className="w-3 h-3 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                                Deleting
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1">
+                                <Trash2 className="w-4 h-4" />
+                                Delete
+                              </span>
+                            )}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -223,46 +301,59 @@ export default function SamplesPage() {
           {/* Mobile stacked cards (<768px) */}
           <div className="md:hidden space-y-4">
             {samples.map(sample => (
-              <Link
-                key={sample.sample_id}
-                href={`/samples/${sample.sample_id}`}
-                className="card block p-5 group cursor-pointer transition-all duration-200 hover:scale-[1.02]"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-900 truncate">{sample.party_name}</h3>
-                    <p className="text-xs text-gray-400 font-mono mt-0.5">{sample.sample_id.slice(0, 8)}</p>
+              <div key={sample.sample_id} className="card p-5 group">
+                <Link href={`/samples/${sample.sample_id}`} className="block cursor-pointer">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 truncate">{sample.party_name}</h3>
+                      <p className="text-xs text-gray-400 font-mono mt-0.5">{sample.sample_id.slice(0, 8)}</p>
+                    </div>
+                    <StatusBadge status={sample.output} />
                   </div>
-                  <StatusBadge status={sample.output} />
-                </div>
-                <dl className="space-y-2 text-sm">
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Product</dt>
-                    <dd className="font-medium text-gray-900 truncate">
-                      {sample.product?.product_name || '—'}
-                      {sample.product?.variant_name ? ` (${sample.product.variant_name})` : ''}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Sales Rep</dt>
-                    <dd className="font-medium text-gray-900">{sample.sales_rep?.user_name || '—'}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Submitted</dt>
-                    <dd className="text-gray-900">
-                      {sample.sample_submission_date ? new Date(sample.sample_submission_date).toLocaleDateString() : '—'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Visits</dt>
-                    <dd className="text-gray-900">{sample.visits?.length || 0}</dd>
-                  </div>
-                </dl>
-                <span className="inline-flex items-center gap-1 font-semibold text-blue-500 mt-3 group-hover:text-blue-600 transition-colors">
-                  View Details
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                </span>
-              </Link>
+                  <dl className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-gray-500">Product</dt>
+                      <dd className="font-medium text-gray-900 truncate">
+                        {sample.product?.product_name || '—'}
+                        {sample.product?.variant_name ? ` (${sample.product.variant_name})` : ''}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-gray-500">Sales Rep</dt>
+                      <dd className="font-medium text-gray-900">{sample.sales_rep?.user_name || '—'}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-gray-500">Submitted</dt>
+                      <dd className="text-gray-900">{formatDate(sample.sample_submission_date)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-gray-500">Visits</dt>
+                      <dd className="text-gray-900">{sample.visits?.length || 0}</dd>
+                    </div>
+                  </dl>
+                  <span className="inline-flex items-center gap-1 font-semibold text-blue-500 mt-3 group-hover:text-blue-600 transition-colors">
+                    View Details
+                    <ArrowRight className="w-4 h-4" />
+                  </span>
+                </Link>
+                <button
+                  onClick={() => handleDeleteSample(sample.sample_id, sample.party_name)}
+                  disabled={deletingId === sample.sample_id}
+                  className="mt-3 w-full inline-flex items-center justify-center gap-1.5 font-semibold text-red-500 border-2 border-red-500 rounded-md px-3 py-2 text-sm hover:bg-red-500 hover:text-white transition-colors disabled:opacity-50"
+                >
+                  {deletingId === sample.sample_id ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Deleting...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </span>
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         </>

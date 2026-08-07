@@ -88,3 +88,48 @@ export async function PUT(
     )
   }
 }
+
+// DELETE /api/samples/:id — delete one sample and its visit history.
+// Visits carry an FK to samples (no ON DELETE CASCADE in the schema), so visits
+// must be deleted first, then the sample, to avoid orphaned rows / FK violations.
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await context.params
+
+    // 1) Delete this sample's visits first (FK: visits.sample_id -> samples.sample_id).
+    const { error: visitsError } = await supabase
+      .from('visits')
+      .delete()
+      .eq('sample_id', id)
+
+    if (visitsError) {
+      return NextResponse.json(
+        { error: `Failed to delete visits: ${visitsError.message}` },
+        { status: 500 }
+      )
+    }
+
+    // 2) Delete the sample itself.
+    const { error: sampleError } = await supabase
+      .from('samples')
+      .delete()
+      .eq('sample_id', id)
+
+    if (sampleError) {
+      return NextResponse.json(
+        { error: `Failed to delete sample: ${sampleError.message}` },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ deleted: true })
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
