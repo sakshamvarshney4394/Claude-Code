@@ -1,7 +1,7 @@
 import './globals.css'
 import { Outfit } from 'next/font/google'
 import Link from 'next/link'
-import { Package, Plus, ClipboardList, FilePlus2 } from 'lucide-react'
+import { Package, Plus, ClipboardList } from 'lucide-react'
 
 const outfit = Outfit({ subsets: ['latin'] })
 
@@ -39,7 +39,7 @@ export default function RootLayout({
             </div>
             <Link
               href="/samples/create"
-              className="inline-flex items-center gap-1.5 bg-blue-500 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-blue-600 transition-all duration-200 hover:scale-105"
+              className="hidden lg:inline-flex items-center gap-1.5 bg-blue-500 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-blue-600 transition-all duration-200 hover:scale-105"
             >
               <Plus className="w-4 h-4" />
               New Sample
@@ -63,13 +63,6 @@ export default function RootLayout({
             >
               <ClipboardList className="w-4 h-4" />
               All Samples
-            </Link>
-            <Link
-              href="/samples/create"
-              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            >
-              <FilePlus2 className="w-4 h-4" />
-              New Sample
             </Link>
           </div>
         </nav>
