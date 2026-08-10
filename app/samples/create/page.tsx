@@ -218,7 +218,7 @@ export default function CreateSamplePage() {
         </section>
 
         {/* Point of Contact */}
-        <section className="bg-gray-100 rounded-lg p-6">
+        <section className="bg-white rounded-lg p-6">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Point of Contact</h3>
           <div className="grid gap-5 lg:grid-cols-2">
             <div>
