@@ -116,14 +116,14 @@ export default function SamplesPage() {
   }
 
   // Feature 3: Export current samples to an .xlsx file, client-side only.
-  // Columns match the table (Sample ID, Party Name, Product, Sales Rep,
+  // Columns match the table (Sample ID, Client Name, Product, Sales Representative,
   // Submitted, Visit count, Status). Reuses already-loaded data — no backend call.
   function handleExport() {
     const rows = samples.map(s => ({
       'Sample ID': s.sample_id,
-      'Party Name': s.party_name,
+      'Client Name': s.party_name,
       'Product': s.product?.product_name || '—',
-      'Sales Rep': s.sales_rep?.user_name || '—',
+      'Sales Representative': s.sales_rep?.user_name || '—',
       'Submitted': s.sample_submission_date ? new Date(s.sample_submission_date).toISOString().slice(0, 10) : '—',
       'Visits': s.visits?.length || 0,
       'Status': s.output,
@@ -239,9 +239,9 @@ export default function SamplesPage() {
                 <thead className="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
                   <tr>
                     <th className="px-6 py-3 font-semibold">Sample ID</th>
-                    <th className="px-6 py-3 font-semibold">Party Name</th>
+                    <th className="px-6 py-3 font-semibold">Client Name</th>
                     <th className="px-6 py-3 font-semibold">Product</th>
-                    <th className="px-6 py-3 font-semibold">Sales Rep</th>
+                    <th className="px-6 py-3 font-semibold">Sales Representative</th>
                     <th className="px-6 py-3 font-semibold">Submitted</th>
                     <th className="px-6 py-3 font-semibold">Visits</th>
                     <th className="px-6 py-3 font-semibold">Status</th>
@@ -319,7 +319,7 @@ export default function SamplesPage() {
                       </dd>
                     </div>
                     <div className="flex justify-between gap-4">
-                      <dt className="text-gray-500">Sales Rep</dt>
+                      <dt className="text-gray-500">Sales Representative</dt>
                       <dd className="font-medium text-gray-900">{sample.sales_rep?.user_name || '—'}</dd>
                     </div>
                     <div className="flex justify-between gap-4">

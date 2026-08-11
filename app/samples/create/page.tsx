@@ -1,9 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { Plus } from 'lucide-react'
+import { INDIAN_STATES } from '@/lib/indian_states'
 
-export default function CreateSamplePage() {
+function CreateSampleForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
   const [formData, setFormData] = useState({
     party_name: '',
     category: '',
@@ -13,6 +19,7 @@ export default function CreateSamplePage() {
     product_id: '',
     sample_submission_date: '',
     location: '',
+    state: '',
     next_visit_date: '',
     sales_rep_id: ''
   })
@@ -20,6 +27,20 @@ export default function CreateSamplePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<boolean>(false)
+
+  // Free-text value when the Category dropdown's "Others" option is selected.
+  const [customCategory, setCustomCategory] = useState('')
+
+  // Snapshot of the just-created client's shared info, so the "Add Another Sample
+  // for [Client Name]" button can pass it along as URL query params.
+  const [createdSample, setCreatedSample] = useState<{
+    party_name: string
+    location: string
+    state: string
+    poc_name: string
+    poc_contact: string
+    designation: string
+  } | null>(null)
 
   // Products loaded from the API GET (product_id = UUID, product_name + category).
   // The dropdown options below are built from these so the submitted product_id is a real FK value.
@@ -50,7 +71,7 @@ export default function CreateSamplePage() {
     loadProducts()
   }, [])
 
-  // Load the rep list once on mount so the Sales Rep dropdown always has options.
+  // Load the rep list once on mount so the Sales Representative dropdown always has options.
   useEffect(() => {
     async function loadSalesReps() {
       try {
@@ -64,6 +85,44 @@ export default function CreateSamplePage() {
     }
     loadSalesReps()
   }, [])
+
+  // Generic prefill from URL query params. Used by the "+ Add Another Sample for
+  // [Client Name]" button, and later by an Edit page — works for ANY page that
+  // links into /samples/create?party_name=...&location=...&state=...&poc_name=...
+  // &poc_contact=...&designation=...
+  // Prefills only the client/shared fields; Product / Category / dates stay blank
+  // for a fresh entry.
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString())
+    const keys = ['party_name', 'location', 'state', 'poc_name', 'poc_contact', 'designation']
+    if (!keys.some(k => params.has(k))) return
+
+    setFormData(prev => ({
+      ...prev,
+      party_name: params.get('party_name') ?? '',
+      location: params.get('location') ?? '',
+      state: params.get('state') ?? '',
+      poc_name: params.get('poc_name') ?? '',
+      poc_contact: params.get('poc_contact') ?? '',
+      designation: params.get('designation') ?? '',
+      // Per-sample fields start empty for the new entry.
+      product_id: '',
+      category: '',
+      sample_submission_date: '',
+      next_visit_date: ''
+    }))
+    setCustomCategory('')
+    setSuccess(false)
+    setError(null)
+  }, [searchParams])
+
+  // Category dropdown: selecting "Others" reveals a free-text input for a custom
+  // category; switching back to a normal category hides and clears that input.
+  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value
+    setFormData(prev => ({ ...prev, category: value }))
+    if (value !== 'Others') setCustomCategory('')
+  }
 
   // Handle form input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -99,13 +158,20 @@ export default function CreateSamplePage() {
         throw new Error('Please fill in all required fields')
       }
 
+      // When "Others" is the selected category, save the typed custom text (not the
+      // literal string "Others"). Blank custom text falls back to null.
+      const categoryToSave =
+        formData.category === 'Others'
+          ? (customCategory.trim() || null)
+          : (formData.category || null)
+
       // Create via the API route so validation + auth checks happen server-side.
       const res = await fetch('/api/samples', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           party_name: formData.party_name,
-          category: formData.category || null,
+          category: categoryToSave,
           poc_name: formData.poc_name || null,
           poc_contact: formData.poc_contact || null,
           designation: formData.designation || null,
@@ -115,6 +181,7 @@ export default function CreateSamplePage() {
           // replaced by session-based attribution once per-rep auth ships in v2.
           sales_rep_id: formData.sales_rep_id || null,
           location: formData.location || null,
+          state: formData.state || null,
           next_visit_date: formData.next_visit_date || null
           // output defaults to 'Pending' per specification
         })
@@ -123,6 +190,16 @@ export default function CreateSamplePage() {
       if (!res.ok) throw new Error(json.error || 'Failed to create sample')
 
       setSuccess(true)
+      // Remember the client's shared info so "Add Another Sample for [Client Name]"
+      // can prefill the next entry via URL query params.
+      setCreatedSample({
+        party_name: formData.party_name,
+        location: formData.location,
+        state: formData.state,
+        poc_name: formData.poc_name,
+        poc_contact: formData.poc_contact,
+        designation: formData.designation
+      })
       // Reset form after successful submission
       setFormData({
         party_name: '',
@@ -134,13 +211,30 @@ export default function CreateSamplePage() {
         sample_submission_date: '',
         sales_rep_id: '',
         location: '',
+        state: '',
         next_visit_date: ''
       })
+      setCustomCategory('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setLoading(false)
     }
+  }
+
+  // "+ Add Another Sample for [Client Name]": navigate back to the form with the
+  // client's shared info as query params; the generic prefill effect above reads
+  // them and only resets the per-sample fields (product, category, dates).
+  const handleAddAnother = () => {
+    if (!createdSample) return
+    const params = new URLSearchParams()
+    params.set('party_name', createdSample.party_name)
+    if (createdSample.location) params.set('location', createdSample.location)
+    if (createdSample.state) params.set('state', createdSample.state)
+    if (createdSample.poc_name) params.set('poc_name', createdSample.poc_name)
+    if (createdSample.poc_contact) params.set('poc_contact', createdSample.poc_contact)
+    if (createdSample.designation) params.set('designation', createdSample.designation)
+    router.push(`/samples/create?${params.toString()}`)
   }
 
   return (
@@ -153,7 +247,21 @@ export default function CreateSamplePage() {
       </div>
 
       {error && <div className="bg-rose-100 border-2 border-rose-400 text-rose-800 px-4 py-3 rounded-md mb-4">{error}</div>}
-      {success && <div className="bg-emerald-100 border-2 border-emerald-400 text-emerald-800 px-4 py-3 rounded-md mb-4">Sample created successfully!</div>}
+      {success && (
+        <div className="bg-emerald-100 border-2 border-emerald-400 text-emerald-800 px-4 py-3 rounded-md mb-4">
+          <p>Sample created successfully!</p>
+          {createdSample && (
+            <button
+              type="button"
+              onClick={handleAddAnother}
+              className="mt-3 inline-flex items-center gap-1.5 btn btn-secondary text-sm px-4 py-2"
+            >
+              <Plus className="w-4 h-4" />
+              Add Another Sample for {createdSample.party_name}
+            </button>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="max-w-md w-full space-y-6 lg:max-w-5xl">
         {/* Customer */}
@@ -161,7 +269,7 @@ export default function CreateSamplePage() {
           <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Customer</h3>
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium mb-2">Party Name *</label>
+              <label className="block text-sm font-medium mb-2">Client Name *</label>
               <input
                 type="text"
                 name="party_name"
@@ -173,7 +281,7 @@ export default function CreateSamplePage() {
             </div>
 
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium mb-2">Sales Rep</label>
+              <label className="block text-sm font-medium mb-2">Sales Representative</label>
               <select
                 name="sales_rep_id"
                 value={formData.sales_rep_id}
@@ -194,25 +302,53 @@ export default function CreateSamplePage() {
               <select
                 name="category"
                 value={formData.category}
-                onChange={handleChange}
+                onChange={handleCategoryChange}
                 className="input"
               >
                 <option value="">Select a category</option>
                 {categories.map(category => (
                   <option key={category} value={category}>{category}</option>
                 ))}
+                <option value="Others">Others</option>
               </select>
+              {/* Custom category text input — shown only when "Others" is selected. */}
+              {formData.category === 'Others' && (
+                <input
+                  type="text"
+                  name="custom_category"
+                  value={customCategory}
+                  onChange={e => setCustomCategory(e.target.value)}
+                  placeholder="Type a custom category"
+                  className="input mt-3"
+                />
+              )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Location</label>
+              <label className="block text-sm font-medium mb-2">Address</label>
               <input
                 type="text"
                 name="location"
                 value={formData.location}
                 onChange={handleChange}
+                placeholder="Address"
                 className="input"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">State</label>
+              <select
+                name="state"
+                value={formData.state}
+                onChange={handleChange}
+                className="input"
+              >
+                <option value="">Select a state</option>
+                {INDIAN_STATES.map(state => (
+                  <option key={state} value={state}>{state}</option>
+                ))}
+              </select>
             </div>
           </div>
         </section>
@@ -314,5 +450,14 @@ export default function CreateSamplePage() {
         </div>
       </form>
     </div>
+  )
+}
+
+// useSearchParams (for the generic prefill) must resolve inside a Suspense boundary.
+export default function CreateSamplePage() {
+  return (
+    <Suspense fallback={null}>
+      <CreateSampleForm />
+    </Suspense>
   )
 }

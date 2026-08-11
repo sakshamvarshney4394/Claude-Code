@@ -167,7 +167,7 @@ export default function SampleDetailPage() {
             Sales
           </h3>
           <div>
-            {infoRow('Sales Rep', sample.sales_rep?.user_name || '—')}
+            {infoRow('Sales Representative', sample.sales_rep?.user_name || '—')}
             {infoRow('Role', sample.sales_rep?.role || '—')}
             {infoRow('Submitted', formatDate(sample.sample_submission_date))}
             {infoRow('Location', sample.location || 'Not specified')}

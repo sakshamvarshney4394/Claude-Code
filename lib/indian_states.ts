@@ -1,0 +1,43 @@
+// Official list of Indian states + union territories for the Sample create form's
+// State dropdown. Ordering: 28 states alphabetically, then the 8 union territories.
+// Kept in its own module so the create form (and later an Edit page) can share it.
+export const INDIAN_STATES: string[] = [
+  // States (28)
+  'Andhra Pradesh',
+  'Arunachal Pradesh',
+  'Assam',
+  'Bihar',
+  'Chhattisgarh',
+  'Goa',
+  'Gujarat',
+  'Haryana',
+  'Himachal Pradesh',
+  'Jharkhand',
+  'Karnataka',
+  'Kerala',
+  'Madhya Pradesh',
+  'Maharashtra',
+  'Manipur',
+  'Meghalaya',
+  'Mizoram',
+  'Nagaland',
+  'Odisha',
+  'Punjab',
+  'Rajasthan',
+  'Sikkim',
+  'Tamil Nadu',
+  'Telangana',
+  'Tripura',
+  'Uttar Pradesh',
+  'Uttarakhand',
+  'West Bengal',
+  // Union Territories (8)
+  'Andaman and Nicobar Islands',
+  'Chandigarh',
+  'Dadra and Nagar Haveli and Daman and Diu',
+  'Jammu and Kashmir',
+  'Ladakh',
+  'Lakshadweep',
+  'National Capital Territory of Delhi',
+  'Puducherry',
+]

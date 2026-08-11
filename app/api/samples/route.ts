@@ -55,6 +55,8 @@ export async function POST(request: NextRequest) {
         // sales_rep_id is nullable until auth ships (Step 5 adds the dropdown).
         sales_rep_id: body.sales_rep_id || null,
         location: body.location || null,
+        // state added with the State dropdown feature (nullable TEXT column).
+        state: body.state || null,
         // output defaults to 'Pending' per specification
         next_visit_date: body.next_visit_date || null
       })
