@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import * as XLSX from 'xlsx'
 import StatusBadge from '@/app/components/StatusBadge'
 import { formatDate } from '@/lib/format'
-import { Package, UserRound, Activity } from 'lucide-react'
+import { Package, UserRound, Activity, Download, Share2, Check } from 'lucide-react'
 
 export default function SampleDetailPage() {
   const { sample_id } = useParams<{ sample_id: string }>()
@@ -14,6 +15,8 @@ export default function SampleDetailPage() {
   const [sample, setSample] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false) // brief "Link copied" confirmation
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Shared loader: fetch one sample with its joins from the API route.
   // (product:products(*) and sales_rep:users(*) resolve because product_id /
@@ -109,6 +112,76 @@ export default function SampleDetailPage() {
     }
   }
 
+  // Download this single sample's full details + follow-up visits as an .xlsx.
+  // Reuses the same SheetJS setup as the list-page export, scoped to one record.
+  function handleDownload() {
+    if (!sample) return
+
+    const iso = (v?: string | null) => (v || '').slice(0, 10) || '—'
+
+    const details = [
+      ['Sample ID', sample.sample_id],
+      ['Client Name', sample.party_name],
+      ['Product', sample.product?.product_name || '—'],
+      ['Variant', sample.product?.variant_name || 'N/A'],
+      ['Category', sample.category || '—'],
+      ['Sales Representative', sample.sales_rep?.user_name || '—'],
+      ['Address', sample.location || '—'],
+      ['State', sample.state || '—'],
+      ['POC Name', sample.poc_name || '—'],
+      ['POC Contact', sample.poc_contact || '—'],
+      ['Designation', sample.designation || '—'],
+      ['Sample Submission Date', iso(sample.sample_submission_date)],
+      ['Next Visit Date', iso(sample.next_visit_date)],
+      ['Status', sample.output || '—']
+    ]
+
+    const visits = (sample.visits || []).map((v: any) => ({
+      'Visit #': v.visit_number,
+      'Visit Date': iso(v.visit_date),
+      'Feedback': v.feedback || '—'
+    }))
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(details), 'Sample Details')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(visits), 'Visits')
+
+    // Filename: client-name-sample-YYYY-MM-DD.xlsx
+    const slug = sample.party_name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'sample'
+    XLSX.writeFile(wb, `${slug}-sample-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  // Share: copy the current detail-page URL. Web Share API on mobile when available,
+  // otherwise clipboard fallback with a brief "Link copied" confirmation. No backend
+  // share token / public route is needed — the URL is already directly accessible
+  // (the app has no auth yet; see note in SUMMARY).
+  async function handleShare() {
+    const url = window.location.href
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: document.title,
+          text: sample?.party_name ? `Sample: ${sample.party_name}` : 'Sample',
+          url
+        })
+        return // shared natively (or user cancelled) — no clipboard message
+      } catch {
+        return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      if (copyTimer.current) clearTimeout(copyTimer.current)
+      copyTimer.current = setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setError('Failed to copy link')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-500 gap-3">
@@ -131,7 +204,7 @@ export default function SampleDetailPage() {
     <div className="py-6 space-y-6">
       {/* Page header (nav lives in the top bar) */}
       <div>
-        <div className="flex justify-between items-start">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Link href="/samples" className="text-sm text-gray-500 hover:text-gray-700">
               ← Back to All Samples
@@ -139,7 +212,17 @@ export default function SampleDetailPage() {
             <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900 mt-1">{sample.party_name}</h1>
             <p className="text-xs text-gray-400 mt-0.5 font-mono">{sample.sample_id}</p>
           </div>
-          <StatusBadge status={sample.output} />
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={sample.output} />
+            <button onClick={handleDownload} className="btn btn-secondary text-sm px-3 py-2">
+              <Download className="w-4 h-4" />
+              Download
+            </button>
+            <button onClick={handleShare} className="btn btn-secondary text-sm px-3 py-2">
+              {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+              {copied ? 'Link copied' : 'Share'}
+            </button>
+          </div>
         </div>
       </div>
 
