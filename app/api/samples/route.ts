@@ -50,6 +50,8 @@ export async function POST(request: NextRequest) {
         poc_name: body.poc_name || null,
         poc_contact: body.poc_contact || null,
         designation: body.designation || null,
+        // poc_category added with the POC Category field (nullable TEXT column).
+        poc_category: body.poc_category || null,
         product_id: body.product_id,
         sample_submission_date: body.sample_submission_date,
         // sales_rep_id is nullable until auth ships (Step 5 adds the dropdown).

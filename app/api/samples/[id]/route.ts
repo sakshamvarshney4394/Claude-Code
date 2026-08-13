@@ -128,6 +128,7 @@ export async function PATCH(
         poc_name: body.poc_name || null,
         poc_contact: body.poc_contact || null,
         designation: body.designation || null,
+        poc_category: body.poc_category || null,
         product_id: body.product_id,
         sample_submission_date: body.sample_submission_date,
         sales_rep_id: body.sales_rep_id || null,
