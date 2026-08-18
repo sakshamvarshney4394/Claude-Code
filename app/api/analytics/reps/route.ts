@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const repsMap = new Map()
 
     data.forEach(sample => {
-      const repId = sample.sales_rep?.id || 'unknown'
+      const repId = sample.sales_rep_id || 'unknown'
       const repName = sample.sales_rep?.user_name || 'Unknown Rep'
 
       // Initialize rep if not exists

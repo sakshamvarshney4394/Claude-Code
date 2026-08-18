@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     const categoriesMap = new Map()
 
     data.forEach(sample => {
-      const productId = sample.product?.id
+      const productId = sample.product_id
       const productName = sample.product?.product_name || 'Unknown Product'
       const category = sample.product?.category || 'Uncategorized'
 
