@@ -82,14 +82,14 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     // Delete visits first due to foreign key constraint: visits.sample_id references samples.sample_id
-    const { error: visitsError } = await supabase.from('visits').delete().neq('visit_id', '')
+    const { error: visitsError } = await supabase.from('visits').delete()
 
     if (visitsError) {
       throw visitsError
     }
 
     // Then delete all samples
-    const { data, error: samplesError } = await supabase.from('samples').delete().neq('sample_id', '').select()
+    const { data, error: samplesError } = await supabase.from('samples').delete().select()
 
     if (samplesError) {
       throw samplesError
