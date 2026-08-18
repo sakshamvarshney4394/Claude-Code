@@ -82,25 +82,35 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     // Delete visits first due to foreign key constraint: visits.sample_id references samples.sample_id
-    const { error: visitsError } = await supabase.from('visits').delete()
+    const { error: visitsError, count: visitsCount } = await supabase
+      .from('visits')
+      .delete()
+      .gte('sample_id', '00000000-0000-0000-0000-000000000000')
 
     if (visitsError) {
-      throw visitsError
+      return NextResponse.json(
+        { error: visitsError.message },
+        { status: 500 }
+      )
     }
 
     // Then delete all samples
-    const { data, error: samplesError } = await supabase.from('samples').delete().select()
+    const { error: samplesError, count: samplesCount } = await supabase
+      .from('samples')
+      .delete()
+      .gte('sample_id', '00000000-0000-0000-0000-000000000000')
 
     if (samplesError) {
-      throw samplesError
+      return NextResponse.json(
+        { error: samplesError.message },
+        { status: 500 }
+      )
     }
 
-    return NextResponse.json({ deleted: data.length }, { status: 200 })
+    return NextResponse.json({ deleted: samplesCount }, { status: 200 })
   } catch (error) {
-    // Properly type the error object
-    const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json(
-      { error: message },
+      { error: String(error) },
       { status: 500 }
     )
   }

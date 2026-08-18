@@ -143,9 +143,6 @@ export default function SamplesPage() {
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null) // Sample being deleted
   const [rowError, setRowError] = useState<string | null>(null) // Per-row delete errors
-  // Clear all data state
-  const [clearing, setClearing] = useState(false)
-  const [clearError, setClearError] = useState<string | null>(null)
 
   // Client-side search + date filters (AND). Applied against already-loaded samples.
   const [search, setSearch] = useState('')
@@ -219,35 +216,7 @@ export default function SamplesPage() {
     XLSX.writeFile(wb, `samples-${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  // Clear all samples and visits
-  async function handleClearAll() {
-    if (!window.confirm(`Delete all ${samples.length} samples and their visits? This cannot be undone.`)) {
-      return
-    }
-
-    setClearing(true)
-    setClearError(null)
-
-    try {
-      const res = await fetch('/api/samples', {
-        method: 'DELETE',
-      })
-
-      const json = await res.json()
-
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to clear data')
-      }
-
-      // Clear the local samples list
-      setSamples([])
-    } catch (err) {
-      setClearError(`Could not clear data: ${err instanceof Error ? err.message : 'Unknown error'}`)
-    } finally {
-      setClearing(false)
-    }
-  }
-
+  
   // Reset both filters to their unfiltered state.
   const resetFilters = () => {
     setSearch('')
@@ -346,37 +315,7 @@ export default function SamplesPage() {
         </div>
       </div>
 
-      {/* Clear All Data button */}
-      {samples.length > 0 && (
-        <div className="flex justify-end mt-6">
-          <button
-            type="button"
-            disabled={clearing}
-            onClick={handleClearAll}
-            className={`btn btn-${clearing ? 'secondary' : 'destructive'} text-sm px-4 py-2 ${
-              clearing ? 'opacity-50' : ''
-            }`}
-          >
-            {clearing ? (
-              <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
-                Clearing...
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <Trash2 className="w-4 h-4" /> Clear All Data
-              </span>
-            )}
-          </button>
-          {clearError && (
-            <div className="mt-3 p-3 bg-red-50 border-l-4 border-red-500 text-red-700">
-              <p className="font-medium">Something went wrong</p>
-              <p className="text-sm">{clearError}</p>
-            </div>
-          )}
-        </div>
-      )}
-
+      
       {!samples.length ? (
         <div className="text-center py-20 bg-white rounded-lg">
           <Inbox className="w-12 h-12 mx-auto text-gray-300 mb-3" />
