@@ -135,7 +135,17 @@ export default function ProductPerformance() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {data.map((item, index) => (
-                <tr key={`${item.id || item.name}-${index}`} className="hover:bg-gray-50">
+                <tr
+                  key={`${item.id || item.name}-${index}`}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => {
+                    if (activeTab === 'products') {
+                      setSelectedProductId(item.id)
+                    } else {
+                      setSelectedCategory(item.name)
+                    }
+                  }}
+                >
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {index + 1}
                   </td>
