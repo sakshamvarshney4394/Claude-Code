@@ -85,7 +85,6 @@ export async function DELETE(request: NextRequest) {
     const { error: visitsError, count: visitsCount } = await supabase
       .from('visits')
       .delete()
-      .gte('sample_id', '00000000-0000-0000-0000-000000000000')
 
     if (visitsError) {
       return NextResponse.json(
@@ -98,7 +97,6 @@ export async function DELETE(request: NextRequest) {
     const { error: samplesError, count: samplesCount } = await supabase
       .from('samples')
       .delete()
-      .gte('sample_id', '00000000-0000-0000-0000-000000000000')
 
     if (samplesError) {
       return NextResponse.json(

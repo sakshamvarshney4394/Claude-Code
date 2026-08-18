@@ -20,6 +20,7 @@ export async function GET(
         visits:visits(*)
       `)
       .eq('sample_id', id)
+      .is('deleted_at', null)
       .single()
 
     if (error) {

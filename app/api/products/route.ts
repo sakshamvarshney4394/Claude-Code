@@ -8,6 +8,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('products')
       .select('product_id, product_name, category')
+      .is('deleted_at', null)
       .order('product_name')
 
     if (error) {

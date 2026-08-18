@@ -9,6 +9,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('users')
       .select('user_id, user_name, role')
+      .is('deleted_at', null)
       .order('user_name')
 
     if (error) {
