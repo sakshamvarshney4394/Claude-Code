@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
         sales_rep:users(*),
         visits:visits(*)
       `)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -80,38 +81,30 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    // First delete all visits (due to FK constraint: visits.sample_id references samples.sample_id)
-    const { error: visitsError } = await supabase
-      .from('visits')
-      .delete()
-      .not('sample_id', 'is', null)
+    // Delete visits first due to foreign key constraint: visits.sample_id references samples.sample_id
+    const { error: visitsError } = await supabase.from('visits').delete().neq('visit_id', '')
 
     if (visitsError) {
-      return NextResponse.json(
-        { error: `Failed to delete visits: ${visitsError.message}` },
-        { status: 500 }
-      )
+      throw visitsError
     }
 
     // Then delete all samples
-    const { error: samplesError } = await supabase
-      .from('samples')
-      .delete()
-      .not('sample_id', 'is', null)
+    const { data, error: samplesError } = await supabase.from('samples').delete().neq('sample_id', '').select()
 
     if (samplesError) {
-      return NextResponse.json(
-        { error: `Failed to delete samples: ${samplesError.message}` },
-        { status: 500 }
-      )
+      throw samplesError
     }
 
-    // Return success message (exact count not critical for this operation)
-    return NextResponse.json({ deleted: true })
+    return NextResponse.json({ deleted: data.length }, { status: 200 })
   } catch (error) {
+    // Properly type the error object
+    const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: message },
       { status: 500 }
     )
   }
 }
+
+// Bulk delete-all endpoint REMOVED — it could wipe the entire database with one call.
+// Single-sample deletion is available at DELETE /api/samples/:id
