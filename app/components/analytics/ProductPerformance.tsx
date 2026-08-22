@@ -1,25 +1,36 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { ProductLike, formatPct } from '@/lib/analytics'
+import { useState, useEffect, useMemo } from 'react'
+import { ProductLike, SampleEntry, formatPct } from '@/lib/analytics'
 import MonthlyOutcomeChart from './MonthlyOutcomeChart'
+import SampleEntriesList from './SampleEntriesList'
 import SuccessHero from './SuccessHero'
 
 type AnalyticsResponse = {
   products: ProductLike[]
   categories: ProductLike[]
+  // Every sample in range, sent once. Each group's `entryIds` points into this.
+  entries: SampleEntry[]
 }
 
 export default function ProductPerformance() {
   const [products, setProducts] = useState<ProductLike[]>([])
   const [categories, setCategories] = useState<ProductLike[]>([])
+  const [entries, setEntries] = useState<SampleEntry[]>([])
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  // Which status card is toggled on, or null. Lives here rather than in the list
+  // so the card and the list it filters stay in sync.
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'products' | 'categories'>('products')
+
+  // Built at the top level, not inside renderDetails(): renderDetails is called
+  // conditionally, and a hook inside it would break the rules of hooks.
+  const entriesById = useMemo(() => new Map(entries.map((e) => [e.sample_id, e])), [entries])
 
   useEffect(() => {
     fetchAnalytics()
@@ -50,6 +61,9 @@ export default function ProductPerformance() {
         setCategories(data.categories)
         setProducts([])
       }
+      // Both endpoints return the same entries for the same range — whichever tab
+      // is active, the ids in that tab's groups resolve against this array.
+      setEntries(data.entries ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load analytics')
     } finally {
@@ -100,6 +114,9 @@ export default function ProductPerformance() {
                   onClick={() => {
                     if (activeTab === 'products') setSelectedProductId(item.id || null)
                     else setSelectedCategory(item.name)
+                    // A filter set while looking at another group would silently
+                    // hide most of this one's rows.
+                    setStatusFilter(null)
                   }}
                 >
                   <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{index + 1}</td>
@@ -138,6 +155,13 @@ export default function ProductPerformance() {
         : categories.find((c) => c.name === selectedCategory)
     if (!item) return null
 
+    // Plain code, not a hook: renderDetails() is called conditionally. Resolving
+    // this group's ids against the shared entries map is what keeps the list
+    // scoped to exactly the samples behind the numbers above it.
+    const itemEntries = item.entryIds
+      .map((id) => entriesById.get(id))
+      .filter((e): e is SampleEntry => e !== undefined)
+
     return (
       <div className="mb-6 space-y-6">
         <h2 className="text-xl font-bold">
@@ -151,15 +175,41 @@ export default function ProductPerformance() {
         <div>
           <h3 className="text-lg font-bold mb-2">What happened to the {item.totalSamples} samples</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {item.statusBreakdown.map((s) => (
-              <div key={s.status} className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm font-medium text-gray-500 mb-1">{s.label}</p>
-                <p className="text-2xl font-bold text-gray-900">{s.count}</p>
-                <p className="text-xs text-gray-500">{formatPct(s.fraction.pct)}% of samples</p>
-              </div>
-            ))}
+            {item.statusBreakdown.map((s) => {
+              const active = statusFilter === s.status
+              return (
+                // A card is now a filter toggle: click to narrow the list below to
+                // just those samples, click again to clear. Styling matches the
+                // previous plain div exactly when no filter is on, so the panel
+                // looks unchanged until someone uses it.
+                <button
+                  key={s.status}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setStatusFilter(active ? null : s.status)}
+                  className={`bg-gray-50 p-4 rounded-lg text-left w-full transition hover:bg-gray-100 ${
+                    active ? 'ring-2 ring-blue-500' : ''
+                  }`}
+                >
+                  <p className="text-sm font-medium text-gray-500 mb-1">{s.label}</p>
+                  <p className="text-2xl font-bold text-gray-900">{s.count}</p>
+                  <p className="text-xs text-gray-500">{formatPct(s.fraction.pct)}% of samples</p>
+                </button>
+              )
+            })}
           </div>
         </div>
+
+        {/* The samples themselves. Inside one product's panel every row has that
+            product; inside one category's panel every row has that category. */}
+        <SampleEntriesList
+          entries={itemEntries}
+          statusFilter={statusFilter}
+          onClearFilter={() => setStatusFilter(null)}
+          onRowClick={() => setStatusFilter(null)}
+          hideProduct={activeTab === 'products'}
+          hideCategory={activeTab === 'categories'}
+        />
 
         {/* Plain facts */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -235,6 +285,7 @@ export default function ProductPerformance() {
           onClick={() => {
             setActiveTab('products')
             setSelectedCategory(null)
+            setStatusFilter(null)
           }}
           className={`${activeTab === 'products' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium`}
         >
@@ -244,6 +295,7 @@ export default function ProductPerformance() {
           onClick={() => {
             setActiveTab('categories')
             setSelectedProductId(null)
+            setStatusFilter(null)
           }}
           className={`${activeTab === 'categories' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium`}
         >
@@ -265,6 +317,7 @@ export default function ProductPerformance() {
             onClick={() => {
               setSelectedProductId(null)
               setSelectedCategory(null)
+              setStatusFilter(null)
             }}
             className="mb-4 inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
           >

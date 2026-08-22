@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { GroupAnalytics, Fraction, NamedRate, formatPct } from '@/lib/analytics'
+import { useState, useEffect, useMemo } from 'react'
+import { GroupAnalytics, Fraction, NamedRate, SampleEntry, formatPct } from '@/lib/analytics'
 import MonthlyOutcomeChart from './MonthlyOutcomeChart'
+import SampleEntriesList from './SampleEntriesList'
 import SuccessHero from './SuccessHero'
 
 type RepData = GroupAnalytics & {
@@ -15,15 +16,25 @@ type RepData = GroupAnalytics & {
 
 type AnalyticsResponse = {
   reps: RepData[]
+  // Every sample in range, sent once. Each rep's `entryIds` points into this.
+  entries: SampleEntry[]
 }
 
 export default function SalesRepPerformance() {
   const [reps, setReps] = useState<RepData[]>([])
+  const [entries, setEntries] = useState<SampleEntry[]>([])
   const [selectedRepId, setSelectedRepId] = useState<string | null>(null)
+  // Which status card is toggled on, or null. Lives here rather than in the list
+  // so the card and the list it filters stay in sync.
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Built at the top level, not inside renderDetails(): renderDetails is called
+  // conditionally, and a hook inside it would break the rules of hooks.
+  const entriesById = useMemo(() => new Map(entries.map((e) => [e.sample_id, e])), [entries])
 
   useEffect(() => {
     fetchAnalytics()
@@ -43,6 +54,7 @@ export default function SalesRepPerformance() {
 
       const data: AnalyticsResponse = await res.json()
       setReps(data.reps)
+      setEntries(data.entries ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load analytics')
     } finally {
@@ -84,7 +96,12 @@ export default function SalesRepPerformance() {
                 <tr
                   key={`${rep.id}-${index}`}
                   className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => setSelectedRepId(rep.id)}
+                  onClick={() => {
+                    setSelectedRepId(rep.id)
+                    // A filter set while looking at another rep would silently
+                    // hide most of this one's rows.
+                    setStatusFilter(null)
+                  }}
                 >
                   <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{index + 1}</td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-800 font-medium">{rep.name}</td>
@@ -119,6 +136,13 @@ export default function SalesRepPerformance() {
     const rep = reps.find((r) => r.id === selectedRepId)
     if (!rep) return null
 
+    // Plain code, not a hook: renderDetails() is called conditionally. Resolving
+    // this rep's ids against the shared entries map is what keeps the list scoped
+    // to exactly the samples behind the numbers above it.
+    const repEntries = rep.entryIds
+      .map((id) => entriesById.get(id))
+      .filter((e): e is SampleEntry => e !== undefined)
+
     return (
       <div className="mb-6 space-y-6">
         <h2 className="text-xl font-bold">How {rep.name} is doing</h2>
@@ -128,15 +152,38 @@ export default function SalesRepPerformance() {
         <div>
           <h3 className="text-lg font-bold mb-2">What happened to their {rep.totalSamples} samples</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {rep.statusBreakdown.map((s) => (
-              <div key={s.status} className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm font-medium text-gray-500 mb-1">{s.label}</p>
-                <p className="text-2xl font-bold text-gray-900">{s.count}</p>
-                <p className="text-xs text-gray-500">{formatPct(s.fraction.pct)}% of samples</p>
-              </div>
-            ))}
+            {rep.statusBreakdown.map((s) => {
+              const active = statusFilter === s.status
+              return (
+                // A card is now a filter toggle: click to narrow the list below to
+                // just those samples, click again to clear. Styling matches the
+                // previous plain div exactly when no filter is on, so the panel
+                // looks unchanged until someone uses it.
+                <button
+                  key={s.status}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setStatusFilter(active ? null : s.status)}
+                  className={`bg-gray-50 p-4 rounded-lg text-left w-full transition hover:bg-gray-100 ${
+                    active ? 'ring-2 ring-blue-500' : ''
+                  }`}
+                >
+                  <p className="text-sm font-medium text-gray-500 mb-1">{s.label}</p>
+                  <p className="text-2xl font-bold text-gray-900">{s.count}</p>
+                  <p className="text-xs text-gray-500">{formatPct(s.fraction.pct)}% of samples</p>
+                </button>
+              )
+            })}
           </div>
         </div>
+
+        <SampleEntriesList
+          entries={repEntries}
+          statusFilter={statusFilter}
+          onClearFilter={() => setStatusFilter(null)}
+          onRowClick={() => setStatusFilter(null)}
+          hideRep
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Fact emoji="👥" label="Visits per sample, on average" value={rep.avgVisitsPerSample} />
@@ -217,7 +264,10 @@ export default function SalesRepPerformance() {
       {selectedRepId ? (
         <div className="border-t border-gray-200 pt-6">
           <button
-            onClick={() => setSelectedRepId(null)}
+            onClick={() => {
+              setSelectedRepId(null)
+              setStatusFilter(null)
+            }}
             className="mb-4 inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
           >
             ← Back to the list
