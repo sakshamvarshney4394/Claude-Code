@@ -61,10 +61,26 @@ export type RawVisit = { visit_date?: string | null }
 //      referenced user row is soft-deleted), so grouping stays correct and only
 //      the display name degrades.
 export type RawSample = {
+  // The primary key. Required, not optional: every row from `fetchSamplesInRange`
+  // has one (the select is `*`), and the entries list uses it both as the React
+  // key and as the `/samples/[sample_id]` link target. Making it optional would
+  // push a `?? ''` fallback into every consumer for a case that cannot happen.
+  sample_id: string
   output?: string | null
   sample_submission_date?: string | null
   updated_at?: string | null
   location?: string | null
+  // Display-only fields the entries list shows. The select is already `*`, so
+  // these arrive over the wire regardless — typing them just stops the component
+  // from having to cast.
+  party_name?: string | null
+  state?: string | null
+  next_visit_date?: string | null
+  // The `samples.category` column, written by the create form. Typed for
+  // completeness but deliberately NOT a grouping key: the categories tab groups
+  // by the LINKED PRODUCT's category (`product.category`), and the two can
+  // disagree. See buildProductsAndCategories.
+  category?: string | null
   // FK columns on the sample row — the grouping keys.
   product_id?: string | null
   sales_rep_id?: string | null
@@ -80,6 +96,14 @@ export type RawSample = {
 export const NO_PRODUCT_LABEL = 'No product recorded'
 export const NO_REP_LABEL = 'No rep recorded'
 export const NO_CATEGORY_LABEL = 'No category recorded'
+
+// Synthetic group ids for the missing-link buckets. They must be non-empty
+// strings: the details panels select with `setSelectedProductId(item.id || null)`,
+// so a falsy id makes a group impossible to open — and the missing-link buckets
+// are among the rows most worth inspecting. The double-underscore form cannot
+// collide with a real UUID.
+export const NO_PRODUCT_ID = '__no_product__'
+export const NO_REP_ID = '__no_rep__'
 
 // ---------------------------------------------------------------------------
 // Fractions: one number, three readable forms
@@ -289,6 +313,17 @@ export type GroupAnalytics = {
   // Empty in normal operation. Surfaced so bad data is visible instead of being
   // quietly counted as "Waiting to hear back".
   unknownStatuses: Array<{ status: string; count: number }>
+  // The sample_ids behind every number above — the audit trail for this group.
+  //
+  // Ids only, never the samples themselves: a sample belongs to a product AND a
+  // category AND a rep, so embedding rows here would ship each one 2-3x. The API
+  // sends one top-level `entries` array and the client looks ids up in it.
+  //
+  // Computed here rather than by each caller because computeGroup already
+  // receives exactly this group's samples, which makes
+  // `entryIds.length === totalSamples` true by construction instead of a
+  // convention someone has to remember.
+  entryIds: string[]
 }
 
 export function computeGroup(samples: RawSample[]): GroupAnalytics {
@@ -374,6 +409,7 @@ export function computeGroup(samples: RawSample[]): GroupAnalytics {
     monthlyTrend: buildMonthlyTrend(samples),
     lowSampleSize: totalSamples < MIN_FOR_RANKING,
     unknownStatuses,
+    entryIds: samples.map((s) => s.sample_id),
   }
 }
 
@@ -434,7 +470,7 @@ export function buildProductsAndCategories(samples: RawSample[]): {
 
   for (const s of samples) {
     // Group by the FK on the row, not the embed — see RawSample.
-    const productId = s.product_id || 'unknown'
+    const productId = s.product_id || NO_PRODUCT_ID
     const productName = s.product?.product_name || NO_PRODUCT_LABEL
     const category = s.product?.category || NO_CATEGORY_LABEL
 
@@ -465,4 +501,105 @@ export function buildProductsAndCategories(samples: RawSample[]): {
   categories.sort((a, b) => b.successPct - a.successPct)
 
   return { products, categories }
+}
+
+// ---------------------------------------------------------------------------
+// Sales reps
+// ---------------------------------------------------------------------------
+
+export type RepAnalytics = GroupAnalytics & {
+  id: string
+  name: string
+  neglectedLead: Fraction
+  bestProductCategory: NamedRate
+  worstProductCategory: NamedRate
+}
+
+// Group all samples by sales rep and summarise each. This grouping used to live
+// inline in app/api/analytics/reps/route.ts. It moved here so it sits beside the
+// product and category grouping and can be tested directly: a test that
+// re-implemented rep grouping would be a second implementation, and drift
+// between two implementations of "which samples belong to this rep" is exactly
+// what produced three different conversion rates before this module existed.
+export function buildReps(samples: RawSample[]): RepAnalytics[] {
+  const repsMap = new Map<string, { id: string; name: string; samples: RawSample[] }>()
+
+  for (const s of samples) {
+    // Group by the FK on the row, not the embed — see RawSample.
+    const repId = s.sales_rep_id || NO_REP_ID
+    const repName = s.sales_rep?.user_name || NO_REP_LABEL
+    if (!repsMap.has(repId)) repsMap.set(repId, { id: repId, name: repName, samples: [] })
+    repsMap.get(repId)!.samples.push(s)
+  }
+
+  const reps: RepAnalytics[] = Array.from(repsMap.values()).map((rep) => {
+    const group = computeGroup(rep.samples)
+    const category = bestWorstBy(rep.samples, (s) => s.product?.category || NO_CATEGORY_LABEL)
+    return {
+      id: rep.id,
+      name: rep.name,
+      ...group,
+      neglectedLead: neglectedLead(rep.samples),
+      bestProductCategory: category.best,
+      worstProductCategory: category.worst,
+    }
+  })
+
+  reps.sort((a, b) => b.successPct - a.successPct)
+  return reps
+}
+
+// ---------------------------------------------------------------------------
+// Entries: the individual samples behind the aggregates
+// ---------------------------------------------------------------------------
+
+// One row of the drill-down list. Flattened so the component reads fields
+// directly instead of walking embeds and re-deriving labels — the derivation
+// rules (FK-based grouping, the null buckets, category from the linked product)
+// belong here next to the aggregates that use the same rules.
+export type SampleEntry = {
+  sample_id: string
+  party_name: string
+  product_name: string
+  category: string
+  sales_rep_name: string
+  location: string
+  state: string
+  sample_submission_date: string | null
+  next_visit_date: string | null
+  status: string
+  // Whether `status` is one of the four current values. False for legacy values
+  // like 'Closed', which computeGroup keeps out of the status cards. The row
+  // still renders, flagged, with its RAW stored value — the point of surfacing
+  // bad data is to make it findable and fixable.
+  statusIsKnown: boolean
+  visitCount: number
+}
+
+// Flatten samples into display rows. Sent ONCE at the top level of each
+// analytics response; groups reference them by id through `entryIds`.
+export function buildEntries(samples: RawSample[]): SampleEntry[] {
+  return samples.map((s) => {
+    // Same normalisation as computeGroup: missing/empty output means "not yet
+    // answered" => Pending, a documented default rather than an unknown value.
+    const status = s.output || 'Pending'
+    return {
+      sample_id: s.sample_id,
+      party_name: s.party_name || '—',
+      product_name: s.product?.product_name || NO_PRODUCT_LABEL,
+      // From the LINKED PRODUCT, matching the categories aggregate. Not the
+      // `samples.category` column, which the create form writes and which can
+      // disagree — a list that disagreed with the panel header above it would be
+      // worse than no list.
+      category: s.product?.category || NO_CATEGORY_LABEL,
+      sales_rep_name: s.sales_rep?.user_name || NO_REP_LABEL,
+      location: s.location || '—',
+      state: s.state || '—',
+      sample_submission_date: s.sample_submission_date || null,
+      next_visit_date: s.next_visit_date || null,
+      status,
+      statusIsKnown: isKnownStatus(status),
+      visitCount: Array.isArray(s.visits) ? s.visits.length : 0,
+    }
+  })
 }
