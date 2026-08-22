@@ -203,7 +203,7 @@ export default function SamplesPage() {
     const rows = samples.map(s => ({
       'Sample ID': formatSampleNumber(serialBySampleId.get(s.sample_id) ?? 0, totalCount),
       'Client Name': s.party_name,
-      'Product': s.product?.product_name || '—',
+      'Proposed Product': s.product?.product_name || '—',
       'Sales Representative': s.sales_rep?.user_name || '—',
       'Submitted': s.sample_submission_date ? new Date(s.sample_submission_date).toISOString().slice(0, 10) : '—',
       'Visits': s.visits?.length || 0,
@@ -306,11 +306,11 @@ export default function SamplesPage() {
           <p className="text-3xl font-extrabold mt-1">{samples.length}</p>
         </div>
         <div className="bg-amber-500 text-white rounded-lg p-6">
-          <p className="text-sm font-medium opacity-80">Pending</p>
+          <p className="text-sm font-medium opacity-80">Response Pending</p>
           <p className="text-3xl font-extrabold mt-1">{pendingCount}</p>
         </div>
         <div className="bg-blue-500 text-white rounded-lg p-6">
-          <p className="text-sm font-medium opacity-80">Onboard</p>
+          <p className="text-sm font-medium opacity-80">Onboarded Client</p>
           <p className="text-3xl font-extrabold mt-1">{onboardCount}</p>
         </div>
       </div>
@@ -386,7 +386,7 @@ export default function SamplesPage() {
                       <tr>
                         <th className="px-6 py-3 font-semibold">Sample ID</th>
                         <th className="px-6 py-3 font-semibold">Client Name</th>
-                        <th className="px-6 py-3 font-semibold">Product</th>
+                        <th className="px-6 py-3 font-semibold">Proposed Product</th>
                         <th className="px-6 py-3 font-semibold">Sales Representative</th>
                         <th className="px-6 py-3 font-semibold">Address</th>
                         <th className="px-6 py-3 font-semibold">Submitted</th>
@@ -438,7 +438,7 @@ export default function SamplesPage() {
                     </div>
                     <dl className="space-y-2 text-sm">
                       <div className="flex justify-between gap-4">
-                        <dt className="text-gray-500">Product</dt>
+                        <dt className="text-gray-500">Proposed Product</dt>
                         <dd className="font-medium text-gray-900 truncate">
                           {sample.product?.product_name || '—'}
                           {sample.product?.variant_name ? ` (${sample.product.variant_name})` : ''}

@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import StatusBadge from '@/app/components/StatusBadge'
 import { formatDate } from '@/lib/format'
+import { formatSampleNumber, computeSerialMap } from '@/lib/sampleNumber'
 import { Package, UserRound, Activity, Download, Share2, Check } from 'lucide-react'
 
 export default function SampleDetailPage() {
@@ -17,6 +18,11 @@ export default function SampleDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false) // brief "Link copied" confirmation
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Display-only sequential sample number + total count, computed from the full
+  // creation-order list (never stored). Used only for the visible "Sample #000N" label.
+  const [serialNumber, setSerialNumber] = useState<number | null>(null)
+  const [totalCount, setTotalCount] = useState(0)
 
   // Shared loader: fetch one sample with its joins from the API route.
   // (product:products(*) and sales_rep:users(*) resolve because product_id /
@@ -49,6 +55,32 @@ export default function SampleDetailPage() {
 
     fetchSample()
   }, [sample_id, router])
+
+  // Compute this sample's display serial number + total count from the full list.
+  // Reuses the shared helper so it matches the list page exactly; recomputed
+  // every load (no persisted value). Does not affect routes/API/FKs.
+  useEffect(() => {
+    if (!sample_id) return
+    let aborted = false
+    const compute = async () => {
+      try {
+        const res = await fetch('/api/samples')
+        if (!res.ok) return
+        const json = await res.json()
+        const all = json.data || []
+        const { serialBySampleId, totalCount: total } = computeSerialMap(all)
+        if (aborted) return
+        setSerialNumber(serialBySampleId.get(sample_id) ?? null)
+        setTotalCount(total)
+      } catch {
+        // Non-fatal — the label just falls back to nothing if the list fails.
+      }
+    }
+    compute()
+    return () => {
+      aborted = true
+    }
+  }, [sample_id])
 
   // Handle status update — PUT /api/samples/:id (clears next_visit_date on final outcomes)
   const handleUpdateStatus = async (newStatus: string) => {
@@ -122,7 +154,7 @@ export default function SampleDetailPage() {
     const details = [
       ['Sample ID', sample.sample_id],
       ['Client Name', sample.party_name],
-      ['Product', sample.product?.product_name || '—'],
+      ['Proposed Product', sample.product?.product_name || '—'],
       ['Variant', sample.product?.variant_name || 'N/A'],
       ['Category', sample.category || '—'],
       ['Sales Representative', sample.sales_rep?.user_name || '—'],
@@ -210,7 +242,9 @@ export default function SampleDetailPage() {
               ← Back to All Samples
             </Link>
             <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900 mt-1">{sample.party_name}</h1>
-            <p className="text-xs text-gray-400 mt-0.5 font-mono">{sample.sample_id}</p>
+            <p className="text-xs text-gray-400 mt-0.5 font-mono">
+              {serialNumber ? `Sample #${formatSampleNumber(serialNumber, totalCount)}` : sample.sample_id}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={sample.output} />
@@ -236,7 +270,7 @@ export default function SampleDetailPage() {
             Product
           </h3>
           <div>
-            {infoRow('Product', sample.product?.product_name || '—')}
+            {infoRow('Proposed Product', sample.product?.product_name || '—')}
             {infoRow('Variant', sample.product?.variant_name || 'N/A')}
             {infoRow('Category', sample.category || '—')}
           </div>
@@ -274,9 +308,8 @@ export default function SampleDetailPage() {
             defaultValue={sample.output}
             onChange={(e) => handleUpdateStatus(e.target.value)}
           >
-            <option value="Pending">Pending</option>
-            <option value="Onboard">Onboard</option>
-            <option value="Closed">Closed</option>
+            <option value="Pending">Response Pending</option>
+            <option value="Onboard">Onboarded Client</option>
             <option value="Not Interested">Not Interested</option>
             <option value="Interested but need time">Interested but need time</option>
           </select>

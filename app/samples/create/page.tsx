@@ -5,10 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import { INDIAN_STATES } from '@/lib/indian_states'
+import { PRODUCT_CATALOG, getCategoryForProduct } from '@/lib/catalog'
 
-// Fixed Category options (replaces the old catalog-derived list). "Others"
-// reveals a per-block custom-text input — kept from the earlier session.
-const CATEGORIES = ['चटनी (Chutney)', 'Sauces', 'Mayo', 'Gravy']
+// Fixed Category options derived from PRODUCT_CATALOG (single source of truth).
+// "Others" reveals a per-block custom-text input — kept from the earlier session.
+const CATEGORIES = PRODUCT_CATALOG.map(c => c.category)
 
 // POC Category (Client Type) fixed options.
 const POC_CATEGORIES = ['HORECA', 'QSR', 'Distributors', 'Exporters']
@@ -96,6 +97,21 @@ function CreateSampleForm() {
     loadSalesReps()
   }, [])
 
+  // NOTE — Category <-> Product used to be synced by two useEffects here. They
+  // fought each other and broke the filter:
+  //
+  //   Effect A ("auto-fill category from product") reset `category` to '' on any
+  //   block whose `product_id` was still empty. Its dep array contained
+  //   `samples.map(b => b.product_id)`, a fresh array on every render, so it ran
+  //   after EVERY render. Picking a category therefore wrote the category, the
+  //   effect immediately wiped it back to '', and `filteredProducts('')` fell
+  //   through to its "no category selected -> show everything" branch. Net
+  //   effect: the Category dropdown appeared to reset itself and the Proposed
+  //   Product dropdown listed all ~60 products regardless of category.
+  //
+  // Both directions are now handled in the change handlers below, where the user's
+  // intent is unambiguous, so neither field can clobber the other.
+
   // Generic prefill from URL query params (unchanged mechanism from earlier
   // session). Used by a future Edit page — works for ANY page that links into
   // /samples/create?party_name=...&location=...&state=...&poc_name=...&
@@ -138,15 +154,69 @@ function CreateSampleForm() {
     setSamples(prev => prev.map((b, i) => (i === index ? { ...b, [field]: value } : b)))
   }
 
-  // Category dropdown per block: selecting "Others" reveals a free-text input;
+  // The category a product belongs to.
+  //
+  // PRODUCT_CATALOG is consulted first, deliberately: the Category dropdown's
+  // options are built from PRODUCT_CATALOG, so resolving through it guarantees
+  // that any catalogued product matches an option that actually exists in the
+  // dropdown. `products.category` from the database is the fallback, which
+  // covers a product that was added to the table but not to the catalog.
+  const categoryOfProduct = (product: { product_name: string; category: string | null }) =>
+    getCategoryForProduct(product.product_name) || product.category || undefined
+
+  // Category dropdown per block. Selecting "Others" reveals a free-text input;
   // switching back to a normal category hides and clears that input.
+  //
+  // Also drops a product that doesn't belong to the newly chosen category —
+  // otherwise the Product dropdown would show a selection that its own option
+  // list no longer contains, which renders as a blank select.
   const handleBlockCategoryChange = (index: number, value: string) => {
     setSamples(prev =>
-      prev.map((b, i) =>
-        i === index
-          ? { ...b, category: value, customCategory: value !== 'Others' ? '' : b.customCategory }
-          : b
-      )
+      prev.map((b, i) => {
+        if (i !== index) return b
+
+        let product_id = b.product_id
+        // 'Others' and the blank option place no constraint on the product.
+        if (product_id && value && value !== 'Others') {
+          const product = products.find(p => p.product_id === product_id)
+          if (!product || categoryOfProduct(product) !== value) product_id = ''
+        }
+
+        return {
+          ...b,
+          category: value,
+          customCategory: value !== 'Others' ? '' : b.customCategory,
+          product_id,
+        }
+      })
+    )
+  }
+
+  // Product dropdown per block. Picking a product auto-fills its category, so
+  // the form still works for someone who goes product-first and ignores the
+  // Category dropdown entirely.
+  //
+  // Guard: a user who chose "Others" and typed a custom category keeps it — the
+  // product's own category must not overwrite deliberate free text.
+  const handleBlockProductChange = (index: number, productId: string) => {
+    setSamples(prev =>
+      prev.map((b, i) => {
+        if (i !== index) return b
+        if (!productId) return { ...b, product_id: '' }
+
+        const product = products.find(p => p.product_id === productId)
+        const resolved = product ? categoryOfProduct(product) : undefined
+
+        // Only adopt a category the Category dropdown can actually display. A
+        // stored `products.category` that isn't in PRODUCT_CATALOG would other-
+        // wise leave the select with no matching <option> and render blank.
+        const displayable = resolved && CATEGORIES.includes(resolved) ? resolved : undefined
+
+        const keepCustom = b.category === 'Others' && b.customCategory.trim() !== ''
+        const category = displayable && !keepCustom ? displayable : b.category
+
+        return { ...b, product_id: productId, category }
+      })
     )
   }
 
@@ -167,6 +237,14 @@ function CreateSampleForm() {
     block.category === 'Others'
       ? (block.customCategory.trim() || null)
       : (block.category || null)
+
+  // The options for one block's Proposed Product dropdown, narrowed to the
+  // selected category. No category (or "Others") means no constraint, so the
+  // full catalog is offered.
+  const filteredProducts = (selectedCategory: string | null, allProducts: Array<{ product_id: string; product_name: string; category: string | null }>) => {
+    if (!selectedCategory || selectedCategory === 'Others') return allProducts
+    return allProducts.filter(product => categoryOfProduct(product) === selectedCategory)
+  }
 
   // Build the POST body for one block, merging the shared client-level fields.
   const buildPayload = (block: SampleBlock) => ({
@@ -204,7 +282,7 @@ function CreateSampleForm() {
       for (let i = 0; i < samples.length; i++) {
         const b = samples[i]
         const missing: string[] = []
-        if (!b.product_id) missing.push('Product')
+        if (!b.product_id) missing.push('Proposed Product')
         if (!b.sample_submission_date) missing.push('Sample Submission Date')
         if (missing.length) {
           throw new Error(
@@ -278,24 +356,73 @@ function CreateSampleForm() {
               >
                 <option value="">Select a sales rep</option>
                 {salesReps.map(rep => (
-                  <option key={rep.user_id} value={rep.user_id}>{rep.user_name}</option>
+                  <option key={rep.user_id} value={rep.user_id}>
+                    {rep.user_name}
+                  </option>
                 ))}
               </select>
             </div>
 
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium mb-2">Client Address</label>
+              <label className="block text-sm font-medium mb-2">POC Name</label>
+              <input
+                type="text"
+                name="poc_name"
+                value={client.poc_name}
+                onChange={handleClientChange}
+                className="input"
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">POC Contact</label>
+              <input
+                type="text"
+                name="poc_contact"
+                value={client.poc_contact}
+                onChange={handleClientChange}
+                className="input"
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">Designation</label>
+              <input
+                type="text"
+                name="designation"
+                value={client.designation}
+                onChange={handleClientChange}
+                className="input"
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">POC Category</label>
+              <select
+                name="poc_category"
+                value={client.poc_category}
+                onChange={handleClientChange}
+                className="input"
+              >
+                <option value="">Select a POC category</option>
+                {POC_CATEGORIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">Location</label>
               <input
                 type="text"
                 name="location"
                 value={client.location}
                 onChange={handleClientChange}
-                placeholder="Client Address"
                 className="input"
               />
             </div>
 
-            <div>
+            <div className="lg:col-span-2">
               <label className="block text-sm font-medium mb-2">State</label>
               <select
                 name="state"
@@ -312,62 +439,12 @@ function CreateSampleForm() {
           </div>
         </section>
 
-        {/* Point of Contact — shared across all samples for this client */}
-        <section className="bg-white rounded-lg p-6">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Point of Contact</h3>
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium mb-2">Name</label>
-              <input
-                type="text"
-                name="poc_name"
-                value={client.poc_name}
-                onChange={handleClientChange}
-                className="input"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Contact (Phone/Email)</label>
-              <input
-                type="text"
-                name="poc_contact"
-                value={client.poc_contact}
-                onChange={handleClientChange}
-                className="input"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Designation</label>
-              <input
-                type="text"
-                name="designation"
-                value={client.designation}
-                onChange={handleClientChange}
-                className="input"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">POC Category</label>
-              <select
-                name="poc_category"
-                value={client.poc_category}
-                onChange={handleClientChange}
-                className="input"
-              >
-                <option value="">Select a POC category</option>
-                {POC_CATEGORIES.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </section>
-
         {/* Repeatable sample-detail blocks — each becomes its own row */}
-        {samples.map((block, index) => (
+        {samples.map((block, index) => {
+          // Narrowed once per block, then reused for both the options and the
+          // "category has no products" hint below.
+          const productOptions = filteredProducts(block.category, products)
+          return (
           <section key={block.blockId} className="bg-white rounded-lg p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
@@ -413,21 +490,29 @@ function CreateSampleForm() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Product *</label>
+                <label className="block text-sm font-medium mb-2">Proposed Product *</label>
                 <select
                   name="product_id"
                   value={block.product_id}
-                  onChange={e => handleBlockChange(index, 'product_id', e.target.value)}
+                  onChange={e => handleBlockProductChange(index, e.target.value)}
                   required
                   className="input"
                 >
                   <option value="">Select a product</option>
-                  {products.map(product => (
+                  {productOptions.map(product => (
                     <option key={product.product_id} value={product.product_id}>
                       {product.product_name}
                     </option>
                   ))}
                 </select>
+                {/* A category whose products aren't in the DB yet would otherwise
+                    look like an empty, unexplained dropdown on a required field. */}
+                {block.category && block.category !== 'Others' && productOptions.length === 0 && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    No products are listed under “{block.category}” yet. Pick another category, or
+                    choose “Others” to see the full list.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -461,20 +546,28 @@ function CreateSampleForm() {
                 onClick={addSample}
                 className="inline-flex items-center gap-1.5 btn btn-secondary text-sm px-4 py-2"
               >
-                <Plus className="w-4 h-4" />
-                Add Another Sample
+                <Plus className="w-3 h-3" /> Add Another Sample
               </button>
             </div>
           </section>
-        ))}
+          )
+        })}
 
-        <div className="p-2">
+        {/* Form submission buttons */}
+        <div className="mt-6 flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={() => router.push('/samples')}
+            className="btn btn-outline"
+          >
+            Cancel
+          </button>
           <button
             type="submit"
             disabled={loading}
-            className="btn btn-primary w-full text-base px-4 py-3"
+            className="btn btn-primary"
           >
-            {loading ? 'Creating...' : `Create Sample${samples.length > 1 ? 's' : ''}`}
+            {loading ? 'Creating...' : 'Create Samples'}
           </button>
         </div>
       </form>
@@ -482,7 +575,8 @@ function CreateSampleForm() {
   )
 }
 
-// useSearchParams (for the generic prefill) must resolve inside a Suspense boundary.
+// useSearchParams (for the generic prefill) must resolve inside a Suspense
+// boundary, or the production build fails to prerender this route.
 export default function CreateSamplePage() {
   return (
     <Suspense fallback={null}>

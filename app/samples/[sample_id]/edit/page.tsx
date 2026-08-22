@@ -7,7 +7,14 @@ import { Plus } from 'lucide-react'
 import { INDIAN_STATES } from '@/lib/indian_states'
 import { formatDate } from '@/lib/format'
 
-const VALID_OUTPUTS = ['Pending', 'Closed', 'Onboard', 'Not Interested', 'Interested but need time']
+const VALID_OUTPUTS = ['Pending', 'Onboard', 'Not Interested', 'Interested but need time']
+
+const OUTPUT_DISPLAY_TEXT: Record<string, string> = {
+  Pending: 'Response Pending',
+  Onboard: 'Onboarded Client',
+  'Not Interested': 'Not Interested',
+  'Interested but need time': 'Interested but need time',
+}
 const POC_CATEGORIES = ['HORECA', 'QSR', 'Distributors', 'Exporters']
 
 export default function EditSamplePage() {
@@ -408,7 +415,7 @@ export default function EditSamplePage() {
           <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Sample Details</h3>
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium mb-2">Product *</label>
+              <label className="block text-sm font-medium mb-2">Proposed Product *</label>
               <select
                 name="product_id"
                 value={formData.product_id}
@@ -457,7 +464,7 @@ export default function EditSamplePage() {
                 className="input"
               >
                 {VALID_OUTPUTS.map(status => (
-                  <option key={status} value={status}>{status}</option>
+                  <option key={status} value={status}>{OUTPUT_DISPLAY_TEXT[status]}</option>
                 ))}
               </select>
             </div>

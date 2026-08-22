@@ -1,44 +1,18 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import StatusBadge from '@/app/components/StatusBadge'
-import { formatDate } from '@/lib/format'
-
-type ProductData = {
-  id: string
-  name: string
-  category: string
-  totalSamples: number
-  statusBreakdown: Array<{
-    status: string
-    count: number
-    percentage: string
-  }>
-  conversionRate: string
-  avgVisitsPerSample: string
-  avgDaysToFirstVisit: string
-  avgDaysToConversion: string
-  bestLocation: { name: string; rate: string }
-  worstLocation: { name: string; rate: string }
-  bestRep: { name: string; rate: string }
-  worstRep: { name: string; rate: string }
-  monthlyTrend: Array<{
-    month: string
-    samplesSent: number
-    conversionRate: number
-  }>
-  lowSampleSize: boolean
-}
+import { ProductLike, formatPct } from '@/lib/analytics'
+import MonthlyOutcomeChart from './MonthlyOutcomeChart'
+import SuccessHero from './SuccessHero'
 
 type AnalyticsResponse = {
-  products: ProductData[]
-  categories: ProductData[]
+  products: ProductLike[]
+  categories: ProductLike[]
 }
 
 export default function ProductPerformance() {
-  const [products, setProducts] = useState<ProductData[]>([])
-  const [categories, setCategories] = useState<ProductData[]>([])
+  const [products, setProducts] = useState<ProductLike[]>([])
+  const [categories, setCategories] = useState<ProductLike[]>([])
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [startDate, setStartDate] = useState<string>('')
@@ -49,29 +23,26 @@ export default function ProductPerformance() {
 
   useEffect(() => {
     fetchAnalytics()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate, activeTab])
 
   const fetchAnalytics = async () => {
     setLoading(true)
     setError(null)
-
     try {
       const params = new URLSearchParams()
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
 
-      const endpoint = activeTab === 'products'
-        ? `/api/analytics/products?${params.toString()}`
-        : `/api/analytics/categories?${params.toString()}`
+      const endpoint =
+        activeTab === 'products'
+          ? `/api/analytics/products?${params.toString()}`
+          : `/api/analytics/categories?${params.toString()}`
 
       const res = await fetch(endpoint)
-
-      if (!res.ok) {
-        throw new Error('Failed to fetch analytics')
-      }
+      if (!res.ok) throw new Error('Failed to fetch analytics')
 
       const data: AnalyticsResponse = await res.json()
-
       if (activeTab === 'products') {
         setProducts(data.products)
         setCategories([])
@@ -86,51 +57,39 @@ export default function ProductPerformance() {
     }
   }
 
-  const handleDateChange = (type: 'start' | 'end', dateString: string) => {
-    if (type === 'start') {
-      setStartDate(dateString)
-    } else {
-      setEndDate(dateString)
-    }
-  }
-
   const getDateRangeText = () => {
-    if (!startDate && !endDate) return 'All Time'
+    if (!startDate && !endDate) return 'All time'
     if (startDate && !endDate) return `From ${new Date(startDate).toLocaleDateString()}`
     if (!startDate && endDate) return `Until ${new Date(endDate).toLocaleDateString()}`
     return `${new Date(startDate).toLocaleDateString()} – ${new Date(endDate).toLocaleDateString()}`
   }
 
-  const renderLeaderboard = () => {
-    const data = activeTab === 'products' ? products : categories
-    const title = activeTab === 'products' ? 'Product Performance Leaderboard' : 'Category Performance Leaderboard'
+  const data = activeTab === 'products' ? products : categories
+  const noun = activeTab === 'products' ? 'product' : 'category'
 
-    if (loading) return <div className="text-center py-8">Loading...</div>
+  const renderLeaderboard = () => {
+    const title =
+      activeTab === 'products' ? 'Which products win clients' : 'Which categories win clients'
+
+    if (loading) return <div className="text-center py-8">Loading…</div>
     if (error) return <div className="text-center py-8 text-red-500">{error}</div>
-    if (data.length === 0) return <div className="text-center py-8">No data available for the selected date range.</div>
+    if (data.length === 0)
+      return <div className="text-center py-8 text-gray-500">No samples in this date range yet.</div>
 
     return (
       <div className="mb-6">
-        <h2 className="text-xl font-bold mb-4">{title}</h2>
+        <h2 className="text-xl font-bold mb-1">{title}</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Sorted by how many samples became clients. Tap any row for the full story.
+        </p>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rank
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Conversion Rate
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total Samples
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">#</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Became clients</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Samples sent</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -139,174 +98,98 @@ export default function ProductPerformance() {
                   key={`${item.id || item.name}-${index}`}
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => {
-                    if (activeTab === 'products') {
-                      setSelectedProductId(item.id)
-                    } else {
-                      setSelectedCategory(item.name)
-                    }
+                    if (activeTab === 'products') setSelectedProductId(item.id || null)
+                    else setSelectedCategory(item.name)
                   }}
                 >
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {index + 1}
+                  <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{index + 1}</td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-800 font-medium">{item.name}</td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <div className="flex items-center gap-3">
+                      <div className="h-2.5 w-24 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-500"
+                          style={{ width: `${Math.min(item.successPct, 100)}%` }}
+                        />
+                      </div>
+                      <span className="tabular-nums">
+                        {item.success.part} of {item.success.whole}{' '}
+                        <span className="text-gray-500">({formatPct(item.successPct)}%)</span>
+                      </span>
+                      {item.lowSampleSize && (
+                        <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded">too few to be sure</span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    {activeTab === 'products' ? item.name : item.name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    {item.conversionRate}
-                    {item.lowSampleSize && <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">Low sample size (n={item.totalSamples})</span>}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    {item.totalSamples}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    {item.statusBreakdown.find(b => b.status === 'Onboard')?.percentage || '0.0% (0/0)'}
-                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">{item.totalSamples}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {data.length > 0 && (
-          <div className="mt-4">
-            <p className="text-sm text-gray-500">
-              Click on a row to view detailed performance metrics
-            </p>
-          </div>
-        )}
       </div>
     )
   }
 
   const renderDetails = () => {
-    const item = activeTab === 'products'
-      ? products.find(p => p.id === selectedProductId)
-      : categories.find(c => c.name === selectedCategory)
-
+    const item =
+      activeTab === 'products'
+        ? products.find((p) => p.id === selectedProductId)
+        : categories.find((c) => c.name === selectedCategory)
     if (!item) return null
 
     return (
-      <div className="mb-6">
-        <h2 className="text-xl font-bold mb-4">
-          {activeTab === 'products' ? 'Product Details' : 'Category Details'}:
-          {' '}
-          <span className="font-normal">{activeTab === 'products' ? item.name : item.name}</span>
+      <div className="mb-6 space-y-6">
+        <h2 className="text-xl font-bold">
+          How “{item.name}” is doing
         </h2>
 
-        {/* Status Breakdown */}
-        <div className="mb-6">
-          <h3 className="text-lg font-bold mb-2">Status Breakdown</h3>
-          <div className="grid grid-cols-2 gap-4">
-            {item.statusBreakdown.map(status => (
-              <div key={status.status} className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm font-medium text-gray-500 mb-1">{status.status}</p>
-                <p className="text-2xl font-bold text-gray-900">{status.percentage}</p>
+        {/* Headline number */}
+        <SuccessHero success={item.success} inWords={item.successInWords} lowSampleSize={item.lowSampleSize} />
+
+        {/* What happened to every sample */}
+        <div>
+          <h3 className="text-lg font-bold mb-2">What happened to the {item.totalSamples} samples</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {item.statusBreakdown.map((s) => (
+              <div key={s.status} className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm font-medium text-gray-500 mb-1">{s.label}</p>
+                <p className="text-2xl font-bold text-gray-900">{s.count}</p>
+                <p className="text-xs text-gray-500">{formatPct(s.fraction.pct)}% of samples</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 gap-6 mb-6">
-          <div>
-            <h3 className="text-lg font-bold mb-2">Visits & Engagement</h3>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-xs">
-                  👥
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Avg. Visits per Sample</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {item.avgVisitsPerSample}
-                    {item.lowSampleSize && <span className="ml-1 bg-blue-100 text-blue-800 text-xs px-1 py-0 rounded">Low sample size</span>}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-xs">
-                  📅
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Avg. Days to First Visit</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {item.avgDaysToFirstVisit}
-                    {item.lowSampleSize && <span className="ml-1 bg-blue-100 text-blue-800 text-xs px-1 py-0 rounded">Low sample size</span>}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-lg font-bold mb-2">Conversion Metrics</h3>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-xs">
-                  🎯
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Conversion Rate</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {item.conversionRate}
-                    {item.lowSampleSize && <span className="ml-1 bg-blue-100 text-blue-800 text-xs px-1 py-0 rounded">Low sample size</span>}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-xs">
-                  ⏱️
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Avg. Days to Conversion</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {item.avgDaysToConversion}
-                    <span className="ml-2 text-xs text-gray-500">(approximate, based on last record update)</span>
-                    {item.lowSampleSize && <span className="ml-1 bg-blue-100 text-blue-800 text-xs px-1 py-0 rounded">Low sample size</span>}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-xs">
-                  📍
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Best Location</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {item.bestLocation.name} ({item.bestLocation.rate})
-                    {item.lowSampleSize && <span className="ml-1 bg-blue-100 text-blue-800 text-xs px-1 py-0 rounded">Low sample size</span>}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-xs">
-                  👤
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Best Sales Rep</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {item.bestRep.name} ({item.bestRep.rate})
-                    {item.lowSampleSize && <span className="ml-1 bg-blue-100 text-blue-800 text-xs px-1 py-0 rounded">Low sample size</span>}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Plain facts */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Fact emoji="👥" label="Visits per sample, on average" value={item.avgVisitsPerSample} />
+          <Fact emoji="📅" label="Days until the first visit, on average" value={item.avgDaysToFirstVisit} />
+          <Fact
+            emoji="⏱️"
+            label="Days to win a client (rough guess)"
+            value={item.avgDaysToConversion}
+            hint="based on when the record was last updated"
+          />
+          <Fact
+            emoji="📍"
+            label="Best area"
+            value={item.bestLocation.name}
+            hint={item.bestLocation.fraction.text}
+          />
+          <Fact
+            emoji="👤"
+            label="Best sales rep"
+            value={item.bestRep.name}
+            hint={item.bestRep.fraction.text}
+          />
         </div>
 
-        {/* Monthly Trend Chart Placeholder */}
-        <div className="mb-6">
-          <h3 className="text-lg font-bold mb-2">Monthly Trend</h3>
-          <div className="bg-gray-50 p-6 rounded-lg">
-            <p className="text-center text-gray-500">
-              [Chart would go here - using recharts for trend lines]
-              <br />
-              Samples sent and conversion rate over time
-            </p>
+        {/* Month by month */}
+        <div>
+          <h3 className="text-lg font-bold mb-2">Month by month</h3>
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <MonthlyOutcomeChart data={item.monthlyTrend} />
           </div>
         </div>
       </div>
@@ -317,32 +200,23 @@ export default function ProductPerformance() {
     <div className="space-y-8">
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900">
+          {activeTab === 'products' ? 'Product performance' : 'Category performance'}
+        </h1>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900">
-            {activeTab === 'products' ? 'Product Performance' : 'Category Performance'}
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 min-w-56">
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => handleDateChange('start', e.target.value)}
-              className="input pl-0 pr-8"
-              placeholder="Start date"
-            />
-          </div>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="input pl-0 pr-8"
+          />
           <span className="text-gray-400">to</span>
-          <div className="relative flex-1 min-w-56">
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => handleDateChange('end', e.target.value)}
-              className="input pl-0 pr-8"
-              placeholder="End date"
-            />
-          </div>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="input pl-0 pr-8"
+          />
           <button
             onClick={() => {
               setStartDate('')
@@ -358,30 +232,33 @@ export default function ProductPerformance() {
       {/* Tabs */}
       <div className="flex border-b border-gray-200">
         <button
-          onClick={() => setActiveTab('products')}
+          onClick={() => {
+            setActiveTab('products')
+            setSelectedCategory(null)
+          }}
           className={`${activeTab === 'products' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium`}
         >
           Products
         </button>
         <button
-          onClick={() => setActiveTab('categories')}
+          onClick={() => {
+            setActiveTab('categories')
+            setSelectedProductId(null)
+          }}
           className={`${activeTab === 'categories' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium`}
         >
           Categories
         </button>
       </div>
 
-      {/* Date Range Info */}
-      { (startDate || endDate) && (
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
-          Active date range: {getDateRangeText()}
+      {(startDate || endDate) && (
+        <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
+          Showing: {getDateRangeText()}
         </div>
       )}
 
-      {/* Leaderboard */}
       {renderLeaderboard()}
 
-      {/* Details Panel */}
       {selectedProductId || selectedCategory ? (
         <div className="border-t border-gray-200 pt-6">
           <button
@@ -391,11 +268,39 @@ export default function ProductPerformance() {
             }}
             className="mb-4 inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
           >
-            ← Back to Leaderboard
+            ← Back to the list
           </button>
           {renderDetails()}
         </div>
-      ) : null}
+      ) : (
+        <p className="text-sm text-gray-400">Tap a {noun} above to see its full story.</p>
+      )}
+    </div>
+  )
+}
+
+// Small plain-language fact row.
+function Fact({
+  emoji,
+  label,
+  value,
+  hint,
+}: {
+  emoji: string
+  label: string
+  value: string
+  hint?: string
+}) {
+  return (
+    <div className="flex items-start gap-3 bg-white border border-gray-200 rounded-lg p-4">
+      <span className="w-9 h-9 flex items-center justify-center bg-blue-50 rounded-full text-base shrink-0">
+        {emoji}
+      </span>
+      <div>
+        <p className="text-sm font-medium text-gray-500">{label}</p>
+        <p className="text-lg font-semibold text-gray-900">{value}</p>
+        {hint && <p className="text-xs text-gray-500">{hint}</p>}
+      </div>
     </div>
   )
 }
