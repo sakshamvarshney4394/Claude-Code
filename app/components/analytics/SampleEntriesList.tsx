@@ -107,11 +107,25 @@ export default function SampleEntriesList({
       </div>
 
       <p className="text-sm text-gray-500 mb-3">
-        {sorted.length === 0
-          ? 'No samples match this filter.'
-          : `Showing ${visible.length} of ${sorted.length} ${sorted.length === 1 ? 'entry' : 'entries'}`}
-        {statusFilter && sorted.length !== entries.length && ` (filtered from ${entries.length})`}
-        {'. Tap a row to open that sample.'}
+        {sorted.length === 0 ? (
+          // Name the filter that emptied the list. The count line and the "tap a
+          // name" hint below both make no sense with nothing to show, so this
+          // branch replaces them rather than appending to them.
+          filterLabel ? (
+            `None of these ${entries.length === 1 ? 'samples' : `${entries.length} samples`} are “${filterLabel}”.`
+          ) : (
+            'No samples to show.'
+          )
+        ) : (
+          <>
+            {`Showing ${visible.length} of ${sorted.length} ${sorted.length === 1 ? 'entry' : 'entries'}`}
+            {statusFilter && sorted.length !== entries.length && ` (filtered from ${entries.length})`}
+            {/* "Client name", not "row": the link is on the client cell only, so
+                telling someone to tap the row is an instruction that does
+                nothing — most obviously on a phone. */}
+            {'. Tap a client name to open that sample.'}
+          </>
+        )}
       </p>
 
       {sorted.length > 0 && (
