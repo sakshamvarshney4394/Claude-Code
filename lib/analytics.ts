@@ -603,3 +603,26 @@ export function buildEntries(samples: RawSample[]): SampleEntry[] {
     }
   })
 }
+
+/**
+ * Compares two submission dates so the newest sorts first, with missing dates
+ * last. Lives here rather than in the component so it can be unit tested.
+ *
+ * Postgres hands back zero-padded ISO dates ('2026-08-18'), which compare
+ * correctly as plain strings — but only while every year has the same number of
+ * digits. This database already contains a submission date in the year 62452,
+ * mistyped into a date field, so five-digit years are not hypothetical. A plain
+ * string compare puts '12026-05-01' *below* '2026-05-01' because '1' < '2', and
+ * the newest row in the table would be displayed as the oldest.
+ *
+ * Comparing length first fixes that: for zero-padded dates the only thing that
+ * varies the length is the year, so a longer string is always the later year.
+ */
+export function compareSubmissionDateDesc(a: string | null, b: string | null): number {
+  const av = a || ''
+  const bv = b || ''
+  if (!av && !bv) return 0
+  if (!av) return 1
+  if (!bv) return -1
+  return bv.length - av.length || bv.localeCompare(av)
+}

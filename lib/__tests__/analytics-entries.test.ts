@@ -15,6 +15,7 @@ import {
   buildEntries,
   buildProductsAndCategories,
   buildReps,
+  compareSubmissionDateDesc,
   isKnownStatus,
   NO_CATEGORY_LABEL,
   NO_PRODUCT_ID,
@@ -310,5 +311,43 @@ describe('analytics entries', () => {
     expect(categories).toEqual([])
     expect(buildReps([])).toEqual([])
     expect(buildEntries([])).toEqual([])
+  })
+})
+
+// The entries list defaults to newest submission first. Sorting is a pure
+// comparison, so it is tested here rather than through the component.
+//
+// This matters because the live database really does hold a submission date in
+// the year 62452 — someone mistyped a year into a date field. A plain string
+// compare of ISO dates happens to order that one correctly, but a 5-digit year
+// beginning with '1' (12026, the same class of typo) compares below '2026' and
+// would be shown as the OLDEST row when it is by far the newest.
+describe('compareSubmissionDateDesc', () => {
+  const newestFirst = (dates: (string | null)[]) => [...dates].sort(compareSubmissionDateDesc)
+
+  it('orders ordinary four-digit years newest first', () => {
+    expect(newestFirst(['2026-08-18', '2026-11-18', '2025-01-01'])).toEqual([
+      '2026-11-18',
+      '2026-08-18',
+      '2025-01-01',
+    ])
+  })
+
+  it('treats a five-digit year as newer whatever digit it starts with', () => {
+    // '12026-05-01' < '2026-05-01' as plain strings, which is the bug.
+    expect(newestFirst(['2026-05-01', '12026-05-01', '62452-05-04'])).toEqual([
+      '62452-05-04',
+      '12026-05-01',
+      '2026-05-01',
+    ])
+  })
+
+  it('sorts entries with no submission date last', () => {
+    expect(newestFirst(['2026-05-01', null, '2026-06-01'])).toEqual([
+      '2026-06-01',
+      '2026-05-01',
+      null,
+    ])
+    expect(compareSubmissionDateDesc(null, null)).toBe(0)
   })
 })

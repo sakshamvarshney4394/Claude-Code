@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useMemo, useState, type ReactNode } from 'react'
-import { PLAIN_STATUS, STATUS_ORDER, type SampleEntry } from '@/lib/analytics'
+import { compareSubmissionDateDesc, PLAIN_STATUS, STATUS_ORDER, type SampleEntry } from '@/lib/analytics'
 import { formatDate } from '@/lib/format'
 import StatusBadge from '@/app/components/StatusBadge'
 
@@ -64,18 +64,13 @@ export default function SampleEntriesList({
         cmp = statusRank(a.status) - statusRank(b.status)
         // Same status: fall back to newest first so the order is stable and
         // meaningful rather than whatever the fetch happened to return.
-        if (cmp === 0) cmp = (b.sample_submission_date || '').localeCompare(a.sample_submission_date || '')
+        if (cmp === 0) cmp = compareSubmissionDateDesc(a.sample_submission_date, b.sample_submission_date)
         return ascending ? -cmp : cmp
       }
-      // ISO date strings (YYYY-MM-DD) compare correctly as strings, and unlike
-      // `new Date(...)` they do so without a timezone shifting a date across a
-      // day boundary. Rows with no submission date sort to the end.
-      const av = a.sample_submission_date || ''
-      const bv = b.sample_submission_date || ''
-      if (!av && !bv) cmp = 0
-      else if (!av) cmp = 1
-      else if (!bv) cmp = -1
-      else cmp = bv.localeCompare(av) // descending = newest first
+      // Newest submission first, blanks last. The comparison is a tested pure
+      // function in lib/analytics — it is not a plain string compare, because
+      // this data contains mistyped five-digit years.
+      cmp = compareSubmissionDateDesc(a.sample_submission_date, b.sample_submission_date)
       return ascending ? -cmp : cmp
     })
     return rows
