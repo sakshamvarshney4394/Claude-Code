@@ -1,6 +1,12 @@
+import { PLAIN_STATUS } from '@/lib/analytics'
+
 // Flat design-system status badge. Status maps to a solid accent color block
 // (flat — no ring, no shadow, rounded-md). Keeps AA contrast for AA-safe combos;
 // amber/rose tints offset with dark text since white-on-amber is border-line.
+//
+// Colours are defined ONCE here and are the single source of truth. They also
+// match MonthlyOutcomeChart's series colours (emerald / sky / amber / rose) so a
+// status reads the same in a badge and in the chart — keep that alignment.
 const STATUS_STYLES: Record<string, string> = {
   Pending: 'bg-amber-100 text-amber-800',
   Onboard: 'bg-emerald-500 text-white',
@@ -8,6 +14,8 @@ const STATUS_STYLES: Record<string, string> = {
   'Interested but need time': 'bg-sky-100 text-sky-800',
 }
 
+// Operational wording, used on /samples and the sample detail page — the screens
+// where someone is working a pipeline.
 const DISPLAY_TEXT: Record<string, string> = {
   Pending: 'Response Pending',
   Onboard: 'Onboarded Client',
@@ -15,9 +23,37 @@ const DISPLAY_TEXT: Record<string, string> = {
   'Interested but need time': 'Interested but need time',
 }
 
-export default function StatusBadge({ status }: { status?: string | null }) {
+// Analytics deliberately speaks plainer than the rest of the app ("Became
+// clients", not "Onboarded Client"), so a badge inside an analytics panel has to
+// agree with the status card above it. Rather than relabel every badge in the app,
+// callers opt into the plain vocabulary.
+//
+// 'operational' is the default so every existing caller is unaffected.
+export type StatusVocabulary = 'operational' | 'plain'
+
+export default function StatusBadge({
+  status,
+  vocabulary = 'operational',
+}: {
+  status?: string | null
+  vocabulary?: StatusVocabulary
+}) {
   const style = (status && STATUS_STYLES[status]) || 'bg-gray-100 text-gray-600'
-  const displayText = (status && DISPLAY_TEXT[status]) || 'Unknown'
+
+  // The plain words come from PLAIN_STATUS in lib/analytics, the same map the
+  // status cards and the monthly chart read. A second copy of those four strings
+  // here would let the badge and the card it sits under drift apart.
+  //
+  // The fallback differs by vocabulary on purpose. Operational screens show
+  // 'Unknown' for an unrecognised value; analytics shows the RAW stored value
+  // (e.g. a legacy 'Closed') because the whole point of surfacing those rows is
+  // that someone can find the bad data and fix it — 'Unknown' hides which value
+  // is wrong.
+  const displayText =
+    vocabulary === 'plain'
+      ? (status && PLAIN_STATUS[status]) || status || 'Unknown'
+      : (status && DISPLAY_TEXT[status]) || 'Unknown'
+
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md ${style}`}>
       <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
