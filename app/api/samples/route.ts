@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
         sales_rep:users(*),
         visits:visits(*)
       `)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -50,6 +51,8 @@ export async function POST(request: NextRequest) {
         poc_name: body.poc_name || null,
         poc_contact: body.poc_contact || null,
         designation: body.designation || null,
+        // poc_category added with the POC Category field (nullable TEXT column).
+        poc_category: body.poc_category || null,
         product_id: body.product_id,
         sample_submission_date: body.sample_submission_date,
         // sales_rep_id is nullable until auth ships (Step 5 adds the dropdown).
@@ -78,38 +81,38 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    // First delete all visits (due to FK constraint: visits.sample_id references samples.sample_id)
-    const { error: visitsError } = await supabase
+    // Delete visits first due to foreign key constraint: visits.sample_id references samples.sample_id
+    const { error: visitsError, count: visitsCount } = await supabase
       .from('visits')
       .delete()
-      .not('sample_id', 'is', null)
 
     if (visitsError) {
       return NextResponse.json(
-        { error: `Failed to delete visits: ${visitsError.message}` },
+        { error: visitsError.message },
         { status: 500 }
       )
     }
 
     // Then delete all samples
-    const { error: samplesError } = await supabase
+    const { error: samplesError, count: samplesCount } = await supabase
       .from('samples')
       .delete()
-      .not('sample_id', 'is', null)
 
     if (samplesError) {
       return NextResponse.json(
-        { error: `Failed to delete samples: ${samplesError.message}` },
+        { error: samplesError.message },
         { status: 500 }
       )
     }
 
-    // Return success message (exact count not critical for this operation)
-    return NextResponse.json({ deleted: true })
+    return NextResponse.json({ deleted: samplesCount }, { status: 200 })
   } catch (error) {
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: String(error) },
       { status: 500 }
     )
   }
 }
+
+// Bulk delete-all endpoint REMOVED — it could wipe the entire database with one call.
+// Single-sample deletion is available at DELETE /api/samples/:id

@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local agent tooling state (incl. .claude/worktrees/, which nests a full
+# checkout + node_modules and must never be committed)
+/.claude/
+
+# dev server logs
+*.log

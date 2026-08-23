@@ -20,6 +20,7 @@ export async function GET(
         visits:visits(*)
       `)
       .eq('sample_id', id)
+      .is('deleted_at', null)
       .single()
 
     if (error) {
@@ -47,7 +48,7 @@ export async function PUT(
     const body = await request.json()
 
     // Validate output field
-    const validOutputs = ['Pending', 'Closed', 'Onboard', 'Not Interested', 'Interested but need time']
+    const validOutputs = ['Pending', 'Onboard', 'Not Interested', 'Interested but need time']
     if (!body.output || !validOutputs.includes(body.output)) {
       return NextResponse.json(
         { error: 'Valid output status is required' },
@@ -62,7 +63,6 @@ export async function PUT(
         // Automatically set next_visit_date to null when outcome is final
         next_visit_date:
           body.output === 'Onboard' ||
-          body.output === 'Closed' ||
           body.output === 'Not Interested'
             ? null
             : undefined,
@@ -112,7 +112,7 @@ export async function PATCH(
     }
 
     // Validate output/status against the known set (mirrors the PUT handler).
-    const validOutputs = ['Pending', 'Closed', 'Onboard', 'Not Interested', 'Interested but need time']
+    const validOutputs = ['Pending', 'Onboard', 'Not Interested', 'Interested but need time']
     if (!body.output || !validOutputs.includes(body.output)) {
       return NextResponse.json(
         { error: 'Valid output status is required' },
@@ -128,6 +128,7 @@ export async function PATCH(
         poc_name: body.poc_name || null,
         poc_contact: body.poc_contact || null,
         designation: body.designation || null,
+        poc_category: body.poc_category || null,
         product_id: body.product_id,
         sample_submission_date: body.sample_submission_date,
         sales_rep_id: body.sales_rep_id || null,

@@ -1,7 +1,7 @@
 import './globals.css'
 import { Outfit } from 'next/font/google'
 import Link from 'next/link'
-import { Package, Plus, ClipboardList } from 'lucide-react'
+import { Package, Plus, ClipboardList, BarChart3 } from 'lucide-react'
 
 const outfit = Outfit({ subsets: ['latin'] })
 
@@ -34,6 +34,10 @@ export default function RootLayout({
                 <Link href="/samples" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900">
                   <ClipboardList className="w-4 h-4" />
                   All Samples
+                </Link>
+                <Link href="/analytics" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900">
+                  <BarChart3 className="w-4 h-4" />
+                  Analytics
                 </Link>
               </nav>
             </div>

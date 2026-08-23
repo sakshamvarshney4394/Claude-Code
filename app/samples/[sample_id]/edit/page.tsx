@@ -5,8 +5,17 @@ import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { INDIAN_STATES } from '@/lib/indian_states'
+import { formatDate } from '@/lib/format'
 
-const VALID_OUTPUTS = ['Pending', 'Closed', 'Onboard', 'Not Interested', 'Interested but need time']
+const VALID_OUTPUTS = ['Pending', 'Onboard', 'Not Interested', 'Interested but need time']
+
+const OUTPUT_DISPLAY_TEXT: Record<string, string> = {
+  Pending: 'Response Pending',
+  Onboard: 'Onboarded Client',
+  'Not Interested': 'Not Interested',
+  'Interested but need time': 'Interested but need time',
+}
+const POC_CATEGORIES = ['HORECA', 'QSR', 'Distributors', 'Exporters']
 
 export default function EditSamplePage() {
   const { sample_id } = useParams<{ sample_id: string }>()
@@ -24,6 +33,7 @@ export default function EditSamplePage() {
     state: '',
     next_visit_date: '',
     sales_rep_id: '',
+    poc_category: '',
     output: '' // status
   })
 
@@ -38,6 +48,17 @@ export default function EditSamplePage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<boolean>(false)
 
+  // Other samples for the same client (matched by party_name), excluding the one
+  // being edited. Read-only — each row links out to its own View/Edit page.
+  const [previousSamples, setPreviousSamples] = useState<Array<{
+    sample_id: string
+    party_name: string
+    category: string | null
+    product: { product_name: string } | null
+    sample_submission_date: string | null
+    output: string
+  }>>([])
+
   // Load the sample + catalog (products, sales reps) and prefill every editable field.
   // Note: follow-up visits are intentionally NOT loaded/edited here — they stay
   // read-time-managed on the detail page (add-visit flow). PATCH never touches them.
@@ -48,10 +69,11 @@ export default function EditSamplePage() {
       try {
         setLoading(true)
 
-        const [sampleRes, prodRes, repsRes] = await Promise.all([
+        const [sampleRes, prodRes, repsRes, allSamplesRes] = await Promise.all([
           fetch(`/api/samples/${sample_id}`),
           fetch('/api/products'),
-          fetch('/api/users')
+          fetch('/api/users'),
+          fetch('/api/samples')
         ])
 
         const sampleJson = await sampleRes.json()
@@ -62,6 +84,19 @@ export default function EditSamplePage() {
         const products = prodJson.data || []
         const repsJson = await repsRes.json()
         const reps = repsJson.data || []
+
+        // Other samples for the same client: filter the full list by party_name,
+        // excluding the sample currently being edited. Read-only here.
+        let others: any[] = []
+        if (allSamplesRes.ok) {
+          const allSamplesJson = await allSamplesRes.json()
+          const all = allSamplesJson.data || []
+          others = all.filter(
+            (s: any) =>
+              s.sample_id !== sample_id &&
+              (s.party_name ?? '') === (sample.party_name ?? '')
+          )
+        }
 
         if (cancelled) return
 
@@ -90,9 +125,11 @@ export default function EditSamplePage() {
           state: sample.state ?? '',
           next_visit_date: (sample.next_visit_date || '').slice(0, 10),
           sales_rep_id: sample.sales_rep_id ?? '',
+          poc_category: sample.poc_category ?? '',
           output: sample.output || 'Pending'
         })
         setCustomCategory(isCustom ? storedCat : '')
+        setPreviousSamples(others)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load sample')
       } finally {
@@ -159,6 +196,7 @@ export default function EditSamplePage() {
           poc_name: formData.poc_name || null,
           poc_contact: formData.poc_contact || null,
           designation: formData.designation || null,
+          poc_category: formData.poc_category || null,
           product_id: formData.product_id,
           sample_submission_date: formData.sample_submission_date,
           sales_rep_id: formData.sales_rep_id || null,
@@ -354,6 +392,21 @@ export default function EditSamplePage() {
                 className="input"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">POC Category</label>
+              <select
+                name="poc_category"
+                value={formData.poc_category}
+                onChange={handleChange}
+                className="input"
+              >
+                <option value="">Select a POC category</option>
+                {POC_CATEGORIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </section>
 
@@ -362,7 +415,7 @@ export default function EditSamplePage() {
           <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Sample Details</h3>
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium mb-2">Product *</label>
+              <label className="block text-sm font-medium mb-2">Proposed Product *</label>
               <select
                 name="product_id"
                 value={formData.product_id}
@@ -411,7 +464,7 @@ export default function EditSamplePage() {
                 className="input"
               >
                 {VALID_OUTPUTS.map(status => (
-                  <option key={status} value={status}>{status}</option>
+                  <option key={status} value={status}>{OUTPUT_DISPLAY_TEXT[status]}</option>
                 ))}
               </select>
             </div>
@@ -428,6 +481,46 @@ export default function EditSamplePage() {
           </button>
         </div>
       </form>
+
+      {/* Previous Samples for this Client — read-only list, links out to each sample's own page */}
+      <section className="bg-white rounded-lg p-6 mt-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">
+          Previous Samples for {formData.party_name || 'this Client'}
+        </h3>
+        {previousSamples.length === 0 ? (
+          <p className="text-gray-500 text-sm">No other samples for this client yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {previousSamples.map(s => (
+              <div
+                key={s.sample_id}
+                className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+              >
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+                  <span className="font-medium text-gray-900">{s.product?.product_name || '—'}</span>
+                  <span className="text-gray-600">Category: {s.category || '—'}</span>
+                  <span className="text-gray-600">Submitted: {formatDate(s.sample_submission_date)}</span>
+                  <span className="text-gray-600">Status: {s.output || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/samples/${s.sample_id}`}
+                    className="btn btn-secondary text-sm px-3 py-1.5"
+                  >
+                    View
+                  </Link>
+                  <Link
+                    href={`/samples/${s.sample_id}/edit`}
+                    className="btn btn-secondary text-sm px-3 py-1.5"
+                  >
+                    Edit
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
