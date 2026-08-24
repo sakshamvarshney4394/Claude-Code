@@ -8,7 +8,7 @@ export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'products' | 'reps'>('products')
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 py-6">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900">
           Analytics Dashboard
@@ -18,17 +18,18 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 mb-6">
+      {/* Tabs. overflow-x-auto because the two labels together are wider than a
+          narrow phone screen; shrink-0 stops them being squashed into two lines. */}
+      <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
         <button
           onClick={() => setActiveTab('products')}
-          className={`${activeTab === 'products' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium`}
+          className={`${activeTab === 'products' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium whitespace-nowrap shrink-0`}
         >
           Product Performance
         </button>
         <button
           onClick={() => setActiveTab('reps')}
-          className={`${activeTab === 'reps' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium`}
+          className={`${activeTab === 'reps' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'} px-4 py-3 text-sm font-medium whitespace-nowrap shrink-0`}
         >
           Sales Rep Performance
         </button>

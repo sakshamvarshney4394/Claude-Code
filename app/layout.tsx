@@ -58,15 +58,27 @@ export default function RootLayout({
           </div>
         </main>
 
-        {/* Bottom navigation (mobile only) */}
+        {/* Bottom navigation (mobile only).
+            NOTE: the app's only /analytics link used to live in the `hidden lg:flex`
+            header nav above, so Analytics was completely unreachable on a phone —
+            the page worked, there was just no way to navigate to it. It belongs here.
+            pr-20 keeps these links clear of the floating New Sample button, which is
+            fixed at bottom-6 right-6 and would otherwise sit on top of them. */}
         <nav className="bg-white border-t border-gray-200 px-4 py-3 lg:hidden">
-          <div className="flex justify-between">
+          <div className="flex items-center gap-2 pr-20">
             <Link
               href="/samples"
               className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
             >
               <ClipboardList className="w-4 h-4" />
               All Samples
+            </Link>
+            <Link
+              href="/analytics"
+              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Analytics
             </Link>
           </div>
         </nav>
