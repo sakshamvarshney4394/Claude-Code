@@ -4,8 +4,9 @@
 //
 // Design brief: a grandma or a child should get it at a glance. So:
 //   - one bar per month, height = how many samples went out (a shape everyone knows)
-//   - each bar is coloured by what happened: green became clients, and the rest
-//     shown honestly above it. Taller green = better. No second axis, no line.
+//   - each bar is coloured by what happened: green was onboarded as a client, and
+//     the rest shown honestly above it. Taller green = better. No second axis, no
+//     line.
 //   - a plain-English sentence underneath says what the picture means.
 
 import {
@@ -25,10 +26,10 @@ import { MonthPoint, oneInN, formatPct } from '@/lib/analytics'
 // consistent everywhere: green = onboarded, sky = interested, amber = pending,
 // rose = not interested.
 const SERIES = [
-  { key: 'becameClients', label: 'Became clients', color: '#10B981' },
-  { key: 'stillDeciding', label: 'Still deciding', color: '#38BDF8' },
-  { key: 'waiting', label: 'Waiting to hear back', color: '#FBBF24' },
-  { key: 'saidNo', label: 'Said no', color: '#FB7185' },
+  { key: 'becameClients', label: 'Onboarded clients', color: '#10B981' },
+  { key: 'stillDeciding', label: 'Interested but need time', color: '#38BDF8' },
+  { key: 'waiting', label: 'Response pending', color: '#FBBF24' },
+  { key: 'saidNo', label: 'Not Interested', color: '#FB7185' },
 ] as const
 
 function CustomTooltip({ active, payload }: TooltipProps<number, string>) {
@@ -64,7 +65,7 @@ function CustomTooltip({ active, payload }: TooltipProps<number, string>) {
         </p>
       ))}
       <p style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6', color: '#059669', fontWeight: 700 }}>
-        {point.becameClients} of {point.samplesSent} became clients ({formatPct(point.successPct)}%)
+        {point.becameClients} of {point.samplesSent} onboarded as clients ({formatPct(point.successPct)}%)
       </p>
     </div>
   )
@@ -80,20 +81,20 @@ function buildCaption(data: MonthPoint[]): string {
 
   const overall = `So far, ${totalClients} of the ${totalSent} ${
     totalSent === 1 ? 'sample' : 'samples'
-  } sent became clients — ${oneInN(totalClients, totalSent)}.`
+  } sent were onboarded as clients — ${oneInN(totalClients, totalSent)}.`
 
   if (active.length < 2) return overall
 
   // Best month by success, needing at least one client to count.
   const withClients = active.filter((d) => d.becameClients > 0)
   if (withClients.length === 0) {
-    return `${overall} None have become clients yet.`
+    return `${overall} None have been onboarded as clients yet.`
   }
   let best = withClients[0]
   for (const d of withClients) {
     if (d.successPct > best.successPct) best = d
   }
-  return `${overall} The best month was ${best.month}, when ${best.becameClients} of ${best.samplesSent} became clients.`
+  return `${overall} The best month was ${best.month}, when ${best.becameClients} of ${best.samplesSent} were onboarded as clients.`
 }
 
 export default function MonthlyOutcomeChart({ data }: { data: MonthPoint[] }) {

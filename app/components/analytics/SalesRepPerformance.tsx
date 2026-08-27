@@ -77,9 +77,9 @@ export default function SalesRepPerformance() {
 
     return (
       <div className="mb-6">
-        <h2 className="text-xl font-bold mb-1">Who wins the most clients</h2>
+        <h2 className="text-xl font-bold mb-1">Ranking based on number of clients onboarded</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Sorted by how many of their samples became clients. Tap any row for the full story.
+          Ranked by how many of their samples were onboarded as clients. Tap any row for the full story.
         </p>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -87,7 +87,7 @@ export default function SalesRepPerformance() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">#</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Became clients</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Onboarded clients</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Samples sent</th>
               </tr>
             </thead>

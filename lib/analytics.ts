@@ -6,7 +6,7 @@
 // divided by *all* samples, so the two tabs literally disagreed. Everything now
 // flows through here, so there is exactly ONE definition of success:
 //
-//     success = samples that became clients  /  ALL samples sent
+//     success = samples onboarded as clients  /  ALL samples sent
 //
 // Numbers are formatted in plain language ("5 of 10 (50%)") so the UI can render
 // them verbatim without re-deriving anything.
@@ -16,17 +16,26 @@
 // ---------------------------------------------------------------------------
 
 // Stored status value -> friendly label shown to a non-technical viewer.
+//
+// Renamed 2026-08-25 at the owner's request. Two of these four now match the
+// stored value exactly ('Not Interested', 'Interested but need time') and the
+// other two differ from StatusBadge's operational wording only in case and
+// plurality ('Onboarded clients' vs 'Onboarded Client', 'Response pending' vs
+// 'Response Pending'). That is deliberate: analytics and the working screens are
+// meant to say the same thing now. Keep the two maps in step by hand — collapsing
+// them into one was offered and deferred, so DISPLAY_TEXT in
+// app/components/StatusBadge.tsx still holds its own copy.
 export const PLAIN_STATUS: Record<string, string> = {
-  Onboard: 'Became clients',
-  'Interested but need time': 'Still deciding',
-  Pending: 'Waiting to hear back',
-  'Not Interested': 'Said no',
+  Onboard: 'Onboarded clients',
+  'Interested but need time': 'Interested but need time',
+  Pending: 'Response pending',
+  'Not Interested': 'Not Interested',
 }
 
 // The four statuses the app can currently store. `scripts/alter-check-constraint.sql`
 // dropped the legacy 'Closed' value from the CHECK constraint, but a constraint
 // change does not rewrite existing rows — so a stored 'Closed' is still possible.
-// It must NOT fall through into "Waiting to hear back", which would silently
+// It must NOT fall through into "Response pending", which would silently
 // relabel a finished sample as an open one. `isKnownStatus` is how callers spot
 // anything outside the four.
 export function isKnownStatus(status: string): boolean {
@@ -110,7 +119,7 @@ export const NO_REP_ID = '__no_rep__'
 // ---------------------------------------------------------------------------
 
 export type Fraction = {
-  part: number // e.g. 5 became clients
+  part: number // e.g. 5 onboarded as clients
   whole: number // e.g. 10 samples
   pct: number // 50  (precise to 1 decimal, for sorting)
   text: string // "5 of 10 (50%)"
@@ -311,7 +320,7 @@ export type GroupAnalytics = {
   lowSampleSize: boolean
   // Stored status values outside the four current ones (e.g. legacy 'Closed').
   // Empty in normal operation. Surfaced so bad data is visible instead of being
-  // quietly counted as "Waiting to hear back".
+  // quietly counted as "Response pending".
   unknownStatuses: Array<{ status: string; count: number }>
   // The sample_ids behind every number above — the audit trail for this group.
   //
@@ -413,8 +422,15 @@ export function computeGroup(samples: RawSample[]): GroupAnalytics {
   }
 }
 
-// Average days from submission to the record's last update, for samples that
-// became clients. Approximate (uses updated_at), so the UI labels it as such.
+// Average days from submission to the record's last update, for samples that were
+// onboarded as clients. Shown on screen as "Days to win a client (rough guess)".
+//
+// READ THIS BEFORE TRUSTING THE NUMBER. There is no column recording WHEN a client
+// said yes, so `updated_at` stands in for it — and `updated_at` moves on any edit
+// for any reason. Correct a phone number on a client won months ago and that
+// sample's "days to win" jumps by months. The figure can therefore only grow, and
+// it can change when no sale happened. Fixing it properly means adding an
+// `onboarded_at` timestamp written when `output` first becomes 'Onboard'.
 export function avgDaysToConversion(samples: RawSample[]): string {
   const gaps: number[] = []
   for (const s of samples) {

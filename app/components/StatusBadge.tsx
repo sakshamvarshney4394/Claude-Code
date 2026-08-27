@@ -23,10 +23,17 @@ const DISPLAY_TEXT: Record<string, string> = {
   'Interested but need time': 'Interested but need time',
 }
 
-// Analytics deliberately speaks plainer than the rest of the app ("Became
-// clients", not "Onboarded Client"), so a badge inside an analytics panel has to
-// agree with the status card above it. Rather than relabel every badge in the app,
-// callers opt into the plain vocabulary.
+// Analytics used to speak plainer than the rest of the app ("Became clients", not
+// "Onboarded Client"), so a badge inside an analytics panel had to agree with the
+// status card above it. Callers therefore opt into the plain vocabulary.
+//
+// As of the 2026-08-25 relabelling the two vocabularies have very nearly converged:
+// PLAIN_STATUS now says 'Onboarded clients' / 'Interested but need time' /
+// 'Response pending' / 'Not Interested', which differs from DISPLAY_TEXT above only
+// in case and plurality. Collapsing the two maps into one was offered to the owner
+// and deferred, so both still exist and must be kept in step by hand. If they ever
+// diverge again, PLAIN_STATUS in lib/analytics.ts is the one the analytics cards and
+// the monthly chart read.
 //
 // 'operational' is the default so every existing caller is unaffected.
 export type StatusVocabulary = 'operational' | 'plain'

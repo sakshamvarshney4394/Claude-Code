@@ -1,8 +1,8 @@
 'use client'
 
 // The single most important number on the page, made unmissable: how many of
-// the samples we sent became clients. A green bar fills to match, so the size
-// of the win is visible without reading any numbers.
+// the samples we sent were onboarded as clients. A green bar fills to match, so
+// the size of the win is visible without reading any numbers.
 
 import { Fraction, formatPct } from '@/lib/analytics'
 
@@ -19,7 +19,7 @@ export default function SuccessHero({
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <p className="text-sm font-semibold text-gray-500 mb-1">Became clients</p>
+      <p className="text-sm font-semibold text-gray-500 mb-1">Onboarded clients</p>
 
       <p className="text-4xl font-extrabold text-gray-900 leading-tight">
         {success.part} <span className="text-2xl font-bold text-gray-400">of</span> {success.whole}
@@ -41,7 +41,7 @@ export default function SuccessHero({
         />
       </div>
       <p className="mt-2 text-xs text-gray-500">
-        Green = samples that became clients, out of everyone we sent to.
+        Green = samples that were onboarded as clients, out of everyone we sent to.
       </p>
     </div>
   )
