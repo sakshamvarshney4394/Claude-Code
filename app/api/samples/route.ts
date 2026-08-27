@@ -79,40 +79,35 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
-    // Delete visits first due to foreign key constraint: visits.sample_id references samples.sample_id
-    const { error: visitsError, count: visitsCount } = await supabase
+    // Step 1: Delete all visits first (FK: visits.sample_id → samples.sample_id)
+    const { error: visitsError, count: visitsDeleted } = await supabase
       .from('visits')
       .delete()
+      .neq('visit_id', '00000000-0000-0000-0000-000000000000')
 
     if (visitsError) {
-      return NextResponse.json(
-        { error: visitsError.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: visitsError.message }, { status: 500 })
     }
 
-    // Then delete all samples
-    const { error: samplesError, count: samplesCount } = await supabase
+    // Step 2: Delete all samples
+    const { error: samplesError, count: samplesDeleted } = await supabase
       .from('samples')
       .delete()
+      .neq('sample_id', '00000000-0000-0000-0000-000000000000')
 
     if (samplesError) {
-      return NextResponse.json(
-        { error: samplesError.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: samplesError.message }, { status: 500 })
     }
 
-    return NextResponse.json({ deleted: samplesCount }, { status: 200 })
+    return NextResponse.json({ deleted: samplesDeleted ?? 0 })
   } catch (error) {
     return NextResponse.json(
-      { error: String(error) },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
 
-// Bulk delete-all endpoint REMOVED — it could wipe the entire database with one call.
-// Single-sample deletion is available at DELETE /api/samples/:id
+// Single-sample deletion lives at DELETE /api/samples/:id.
