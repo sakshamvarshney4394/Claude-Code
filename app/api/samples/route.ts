@@ -31,40 +31,107 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Validate required fields. NOTE: sales_rep_id is intentionally NOT required yet —
-    // auth is deferred to v2, and the create form adds a rep via a dropdown in Step 5.
-    const requiredFields = ['party_name', 'product_id', 'sample_submission_date']
-    for (const field of requiredFields) {
-      if (!body[field]) {
-        return NextResponse.json(
-          { error: `${field} is required` },
-          { status: 400 }
-        )
-      }
-    }
+    let rowsToInsert: any[] = []
 
-    const { data, error } = await supabase
-      .from('samples')
-      .insert({
+    if (Array.isArray(body)) {
+      rowsToInsert = body
+    } else if (Array.isArray(body.samples)) {
+      // Multiple sample items with shared client fields
+      const {
+        party_name,
+        poc_name,
+        poc_contact,
+        designation,
+        poc_category,
+        sales_rep_id,
+        location,
+        state,
+      } = body
+
+      rowsToInsert = body.samples.map((s: any) => ({
+        party_name: s.party_name ?? party_name,
+        category: s.category ?? null,
+        poc_name: s.poc_name ?? poc_name ?? null,
+        poc_contact: s.poc_contact ?? poc_contact ?? null,
+        designation: s.designation ?? designation ?? null,
+        poc_category: s.poc_category ?? poc_category ?? null,
+        product_id: s.product_id,
+        sample_submission_date: s.sample_submission_date,
+        sales_rep_id: s.sales_rep_id ?? sales_rep_id ?? null,
+        location: s.location ?? location ?? null,
+        state: s.state ?? state ?? null,
+        next_visit_date: s.next_visit_date ?? null,
+      }))
+    } else if (Array.isArray(body.product_ids)) {
+      // Array of product_ids with shared fields
+      const {
+        party_name,
+        category,
+        categories,
+        poc_name,
+        poc_contact,
+        designation,
+        poc_category,
+        sample_submission_date,
+        sales_rep_id,
+        location,
+        state,
+        next_visit_date,
+      } = body
+
+      rowsToInsert = body.product_ids.map((pid: string, idx: number) => ({
+        party_name,
+        category: (Array.isArray(categories) ? categories[idx] : category) || null,
+        poc_name: poc_name || null,
+        poc_contact: poc_contact || null,
+        designation: designation || null,
+        poc_category: poc_category || null,
+        product_id: pid,
+        sample_submission_date,
+        sales_rep_id: sales_rep_id || null,
+        location: location || null,
+        state: state || null,
+        next_visit_date: next_visit_date || null,
+      }))
+    } else {
+      // Single sample object
+      rowsToInsert = [{
         party_name: body.party_name,
         category: body.category || null,
         poc_name: body.poc_name || null,
         poc_contact: body.poc_contact || null,
         designation: body.designation || null,
-        // poc_category added with the POC Category field (nullable TEXT column).
         poc_category: body.poc_category || null,
         product_id: body.product_id,
         sample_submission_date: body.sample_submission_date,
-        // sales_rep_id is nullable until auth ships (Step 5 adds the dropdown).
         sales_rep_id: body.sales_rep_id || null,
         location: body.location || null,
-        // state added with the State dropdown feature (nullable TEXT column).
         state: body.state || null,
-        // output defaults to 'Pending' per specification
-        next_visit_date: body.next_visit_date || null
-      })
+        next_visit_date: body.next_visit_date || null,
+      }]
+    }
+
+    if (rowsToInsert.length === 0) {
+      return NextResponse.json({ error: 'At least one product is required' }, { status: 400 })
+    }
+
+    // Validate required fields for every row
+    for (const row of rowsToInsert) {
+      if (!row.party_name) {
+        return NextResponse.json({ error: 'party_name is required' }, { status: 400 })
+      }
+      if (!row.product_id) {
+        return NextResponse.json({ error: 'product_id is required' }, { status: 400 })
+      }
+      if (!row.sample_submission_date) {
+        return NextResponse.json({ error: 'sample_submission_date is required' }, { status: 400 })
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('samples')
+      .insert(rowsToInsert)
       .select()
-      .single()
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -109,5 +176,3 @@ export async function DELETE() {
     )
   }
 }
-
-// Single-sample deletion lives at DELETE /api/samples/:id.
