@@ -12,7 +12,7 @@ import { PRODUCT_CATALOG, getCategoryForProduct } from '@/lib/catalog'
 const CATEGORIES = PRODUCT_CATALOG.map(c => c.category)
 
 // POC Category (Client Type) fixed options.
-const POC_CATEGORIES = ['HORECA', 'QSR', 'Distributors', 'Exporters']
+const POC_CATEGORIES = ['HORECA', 'QSR', 'Distributors', 'Exporters', 'Sweet Shops', 'Hotel']
 
 // One repeatable sample-detail block. Category/Product/Dates only — the
 // client-level fields are shared across all blocks and not repeated here.
