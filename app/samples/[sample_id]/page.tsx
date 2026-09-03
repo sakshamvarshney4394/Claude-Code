@@ -1,13 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
 import StatusBadge from '@/app/components/StatusBadge'
 import { formatDate } from '@/lib/format'
 import { formatSampleNumber, computeSerialMap } from '@/lib/sampleNumber'
-import { Package, UserRound, Activity, Download, Share2, Check } from 'lucide-react'
+import { Package, UserRound, Activity, Pencil, Trash2 } from 'lucide-react'
 
 export default function SampleDetailPage() {
   const { sample_id } = useParams<{ sample_id: string }>()
@@ -15,18 +14,14 @@ export default function SampleDetailPage() {
 
   const [sample, setSample] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false) // brief "Link copied" confirmation
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Display-only sequential sample number + total count, computed from the full
-  // creation-order list (never stored). Used only for the visible "Sample #000N" label.
+  // Display-only sequential sample number + total count
   const [serialNumber, setSerialNumber] = useState<number | null>(null)
   const [totalCount, setTotalCount] = useState(0)
 
   // Shared loader: fetch one sample with its joins from the API route.
-  // (product:products(*) and sales_rep:users(*) resolve because product_id /
-  //  sales_rep_id hold real UUIDs that match seeded rows.)
   const loadSample = async (id: string) => {
     const res = await fetch(`/api/samples/${id}`)
     const json = await res.json()
@@ -56,9 +51,7 @@ export default function SampleDetailPage() {
     fetchSample()
   }, [sample_id, router])
 
-  // Compute this sample's display serial number + total count from the full list.
-  // Reuses the shared helper so it matches the list page exactly; recomputed
-  // every load (no persisted value). Does not affect routes/API/FKs.
+  // Compute this sample's display serial number + total count
   useEffect(() => {
     if (!sample_id) return
     let aborted = false
@@ -73,7 +66,7 @@ export default function SampleDetailPage() {
         setSerialNumber(serialBySampleId.get(sample_id) ?? null)
         setTotalCount(total)
       } catch {
-        // Non-fatal — the label just falls back to nothing if the list fails.
+        // Non-fatal
       }
     }
     compute()
@@ -82,21 +75,23 @@ export default function SampleDetailPage() {
     }
   }, [sample_id])
 
-  // Handle status update — PUT /api/samples/:id (clears next_visit_date on final outcomes)
-  const handleUpdateStatus = async (newStatus: string) => {
+  // Delete sample and its visits
+  const handleDelete = async () => {
+    if (!window.confirm('Delete this sample and all its visit history? This cannot be undone.')) {
+      return
+    }
+
     try {
+      setDeleting(true)
       const res = await fetch(`/api/samples/${sample_id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ output: newStatus })
+        method: 'DELETE',
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to update status')
-
-      // Reload so the joined product / sales_rep / visits stay fresh.
-      setSample(await loadSample(sample_id))
+      if (!res.ok) throw new Error(json.error || 'Failed to delete sample')
+      router.push('/samples')
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(err instanceof Error ? err.message : 'Failed to delete sample')
+      setDeleting(false)
     }
   }
 
@@ -121,96 +116,24 @@ export default function SampleDetailPage() {
     }
 
     try {
-      // POST /api/visits computes the next visit_number server-side.
       const res = await fetch('/api/visits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sample_id,
           visit_date: visitDate,
-          feedback: feedback || null
-        })
+          feedback: feedback || null,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to add visit')
 
-      // Reset form, then reload to show the new visit.
       visitDateInput.value = ''
       feedbackInput.value = ''
 
       setSample(await loadSample(sample_id))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  // Download this single sample's full details + follow-up visits as an .xlsx.
-  // Reuses the same SheetJS setup as the list-page export, scoped to one record.
-  function handleDownload() {
-    if (!sample) return
-
-    const iso = (v?: string | null) => (v || '').slice(0, 10) || '—'
-
-    const details = [
-      ['Sample ID', sample.sample_id],
-      ['Client Name', sample.party_name],
-      ['Proposed Product', sample.product?.product_name || '—'],
-      ['Variant', sample.product?.variant_name || 'N/A'],
-      ['Category', sample.category || '—'],
-      ['Sales Representative', sample.sales_rep?.user_name || '—'],
-      ['Address', sample.location || '—'],
-      ['State', sample.state || '—'],
-      ['POC Name', sample.poc_name || '—'],
-      ['POC Contact', sample.poc_contact || '—'],
-      ['Designation', sample.designation || '—'],
-      ['Sample Submission Date', iso(sample.sample_submission_date)],
-      ['Next Visit Date', iso(sample.next_visit_date)],
-      ['Status', sample.output || '—']
-    ]
-
-    const visits = (sample.visits || []).map((v: any) => ({
-      'Visit #': v.visit_number,
-      'Visit Date': iso(v.visit_date),
-      'Feedback': v.feedback || '—'
-    }))
-
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(details), 'Sample Details')
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(visits), 'Visits')
-
-    // Filename: client-name-sample-YYYY-MM-DD.xlsx
-    const slug = sample.party_name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'sample'
-    XLSX.writeFile(wb, `${slug}-sample-${new Date().toISOString().slice(0, 10)}.xlsx`)
-  }
-
-  // Share: copy the current detail-page URL. Web Share API on mobile when available,
-  // otherwise clipboard fallback with a brief "Link copied" confirmation. No backend
-  // share token / public route is needed — the URL is already directly accessible
-  // (the app has no auth yet; see note in SUMMARY).
-  async function handleShare() {
-    const url = window.location.href
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share({
-          title: document.title,
-          text: sample?.party_name ? `Sample: ${sample.party_name}` : 'Sample',
-          url
-        })
-        return // shared natively (or user cancelled) — no clipboard message
-      } catch {
-        return
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      if (copyTimer.current) clearTimeout(copyTimer.current)
-      copyTimer.current = setTimeout(() => setCopied(false), 2000)
-    } catch {
-      setError('Failed to copy link')
     }
   }
 
@@ -234,7 +157,7 @@ export default function SampleDetailPage() {
 
   return (
     <div className="py-6 space-y-6">
-      {/* Page header (nav lives in the top bar) */}
+      {/* Page header with exactly Edit and Delete action buttons */}
       <div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -248,19 +171,26 @@ export default function SampleDetailPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={sample.output} />
-            <button onClick={handleDownload} className="btn btn-secondary text-sm px-3 py-2">
-              <Download className="w-4 h-4" />
-              Download
-            </button>
-            <button onClick={handleShare} className="btn btn-secondary text-sm px-3 py-2">
-              {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-              {copied ? 'Link copied' : 'Share'}
+            <Link
+              href={`/samples/${sample_id}/edit`}
+              className="btn btn-secondary text-sm px-4 py-2 inline-flex items-center gap-1.5"
+            >
+              <Pencil className="w-4 h-4" />
+              Edit
+            </Link>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="btn btn-secondary text-sm px-4 py-2 inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="w-4 h-4" />
+              {deleting ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Info cards — responsive: 1 col mobile, 3 cols desktop */}
+      {/* Info cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="card p-6">
           <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -271,8 +201,8 @@ export default function SampleDetailPage() {
           </h3>
           <div>
             {infoRow('Proposed Product', sample.product?.product_name || '—')}
-            {infoRow('Variant', sample.product?.variant_name || 'N/A')}
             {infoRow('Category', sample.category || '—')}
+            {infoRow('POC Category', sample.poc_category || '—')}
           </div>
         </div>
 
@@ -281,13 +211,16 @@ export default function SampleDetailPage() {
             <span className="w-8 h-8 rounded-md bg-gray-100 text-emerald-500 flex items-center justify-center">
               <UserRound className="w-4 h-4" />
             </span>
-            Sales
+            Sales & Client
           </h3>
           <div>
             {infoRow('Sales Representative', sample.sales_rep?.user_name || '—')}
-            {infoRow('Role', sample.sales_rep?.role || '—')}
+            {infoRow('POC Name', sample.poc_name || '—')}
+            {infoRow('POC Contact', sample.poc_contact || '—')}
+            {infoRow('Designation', sample.designation || '—')}
+            {infoRow('Address', sample.location || 'Not specified')}
+            {infoRow('State', sample.state || '—')}
             {infoRow('Submitted', formatDate(sample.sample_submission_date))}
-            {infoRow('Location', sample.location || 'Not specified')}
             {infoRow('Next Visit', formatDate(sample.next_visit_date) === '—' ? 'None scheduled' : formatDate(sample.next_visit_date))}
           </div>
         </div>
@@ -299,24 +232,14 @@ export default function SampleDetailPage() {
             </span>
             Status
           </h3>
-          <div className="mb-4">
-            <StatusBadge status={sample.output} />
+          <div>
+            {infoRow('Current Status', sample.output || 'Pending')}
+            {infoRow('Visits Count', String(sample.visits?.length || 0))}
           </div>
-          <label className="block text-sm font-medium mb-2">Update Status</label>
-          <select
-            className="input"
-            defaultValue={sample.output}
-            onChange={(e) => handleUpdateStatus(e.target.value)}
-          >
-            <option value="Pending">Response Pending</option>
-            <option value="Onboard">Onboarded Client</option>
-            <option value="Not Interested">Not Interested</option>
-            <option value="Interested but need time">Interested but need time</option>
-          </select>
         </div>
       </div>
 
-      {/* Visits + add-visit — responsive: 1 col mobile, 2 cols desktop */}
+      {/* Visits + add-visit */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">

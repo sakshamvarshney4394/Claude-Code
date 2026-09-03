@@ -3,9 +3,8 @@
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
 import { INDIAN_STATES } from '@/lib/indian_states'
-import { formatDate } from '@/lib/format'
+import { PRODUCT_CATALOG, getCategoryForProduct } from '@/lib/catalog'
 
 const VALID_OUTPUTS = ['Pending', 'Onboard', 'Not Interested', 'Interested but need time']
 
@@ -15,7 +14,8 @@ const OUTPUT_DISPLAY_TEXT: Record<string, string> = {
   'Not Interested': 'Not Interested',
   'Interested but need time': 'Interested but need time',
 }
-const POC_CATEGORIES = ['HORECA', 'QSR', 'Distributors', 'Exporters']
+
+const POC_CATEGORIES = ['HORECA', 'QSR', 'Distributors', 'Exporters', 'Sweet Shops', 'Hotel']
 
 export default function EditSamplePage() {
   const { sample_id } = useParams<{ sample_id: string }>()
@@ -23,45 +23,27 @@ export default function EditSamplePage() {
 
   const [formData, setFormData] = useState({
     party_name: '',
-    category: '',
     poc_name: '',
     poc_contact: '',
     designation: '',
-    product_id: '',
-    sample_submission_date: '',
+    poc_category: '',
     location: '',
     state: '',
-    next_visit_date: '',
     sales_rep_id: '',
-    poc_category: '',
-    output: '' // status
+    product_id: '',
+    sample_submission_date: '',
+    next_visit_date: '',
+    output: 'Pending',
   })
 
-  const [customCategory, setCustomCategory] = useState('') // filled when stored category is custom ("Others")
-
   const [products, setProducts] = useState<Array<{ product_id: string; product_name: string; category: string | null }>>([])
-  const [categories, setCategories] = useState<string[]>([])
   const [salesReps, setSalesReps] = useState<Array<{ user_id: string; user_name: string }>>([])
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<boolean>(false)
 
-  // Other samples for the same client (matched by party_name), excluding the one
-  // being edited. Read-only — each row links out to its own View/Edit page.
-  const [previousSamples, setPreviousSamples] = useState<Array<{
-    sample_id: string
-    party_name: string
-    category: string | null
-    product: { product_name: string } | null
-    sample_submission_date: string | null
-    output: string
-  }>>([])
-
-  // Load the sample + catalog (products, sales reps) and prefill every editable field.
-  // Note: follow-up visits are intentionally NOT loaded/edited here — they stay
-  // read-time-managed on the detail page (add-visit flow). PATCH never touches them.
+  // Load sample data + products + sales reps
   useEffect(() => {
     let cancelled = false
 
@@ -69,11 +51,10 @@ export default function EditSamplePage() {
       try {
         setLoading(true)
 
-        const [sampleRes, prodRes, repsRes, allSamplesRes] = await Promise.all([
+        const [sampleRes, prodRes, repsRes] = await Promise.all([
           fetch(`/api/samples/${sample_id}`),
           fetch('/api/products'),
           fetch('/api/users'),
-          fetch('/api/samples')
         ])
 
         const sampleJson = await sampleRes.json()
@@ -81,55 +62,40 @@ export default function EditSamplePage() {
         const sample = sampleJson.data
 
         const prodJson = await prodRes.json()
-        const products = prodJson.data || []
+        const activeProducts = prodJson.data || []
+
         const repsJson = await repsRes.json()
         const reps = repsJson.data || []
 
-        // Other samples for the same client: filter the full list by party_name,
-        // excluding the sample currently being edited. Read-only here.
-        let others: any[] = []
-        if (allSamplesRes.ok) {
-          const allSamplesJson = await allSamplesRes.json()
-          const all = allSamplesJson.data || []
-          others = all.filter(
-            (s: any) =>
-              s.sample_id !== sample_id &&
-              (s.party_name ?? '') === (sample.party_name ?? '')
-          )
-        }
-
         if (cancelled) return
 
-        setProducts(products)
-        setSalesReps(reps)
-        // Distinct categories drive the Category dropdown.
-        const cats = Array.from(new Set(products.map((p: any) => p.category).filter(Boolean) as string[]))
-        setCategories(cats)
+        // If sample's current product is soft-deleted, append it so it can still be displayed
+        let allProducts = [...activeProducts]
+        if (sample.product && !allProducts.some(p => p.product_id === sample.product.product_id)) {
+          allProducts.push({
+            product_id: sample.product.product_id,
+            product_name: sample.product.product_name,
+            category: sample.product.category,
+          })
+        }
 
-        // Resolve the stored category into the dropdown. If it isn't one of the
-        // catalog's known categories (and isn't literally "Others"), treat it as a
-        // custom category: select "Others" and place the stored text in the custom input.
-        const storedCat = sample.category || ''
-        const isKnown = cats.includes(storedCat)
-        const isCustom = !!storedCat && storedCat !== 'Others' && !isKnown
+        setProducts(allProducts)
+        setSalesReps(reps)
 
         setFormData({
           party_name: sample.party_name ?? '',
-          category: storedCat,
           poc_name: sample.poc_name ?? '',
           poc_contact: sample.poc_contact ?? '',
           designation: sample.designation ?? '',
-          product_id: sample.product_id ?? '',
-          sample_submission_date: (sample.sample_submission_date || '').slice(0, 10),
+          poc_category: sample.poc_category ?? '',
           location: sample.location ?? '',
           state: sample.state ?? '',
-          next_visit_date: (sample.next_visit_date || '').slice(0, 10),
           sales_rep_id: sample.sales_rep_id ?? '',
-          poc_category: sample.poc_category ?? '',
-          output: sample.output || 'Pending'
+          product_id: sample.product_id ?? '',
+          sample_submission_date: (sample.sample_submission_date || '').slice(0, 10),
+          next_visit_date: (sample.next_visit_date || '').slice(0, 10),
+          output: sample.output || 'Pending',
         })
-        setCustomCategory(isCustom ? storedCat : '')
-        setPreviousSamples(others)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load sample')
       } finally {
@@ -143,94 +109,71 @@ export default function EditSamplePage() {
     }
   }, [sample_id])
 
-  // Handle text/select/textarea input changes
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
-  // Category dropdown: "Others" reveals a free-text input for a custom category;
-  // switching back to a normal category hides and clears that input.
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value
-    setFormData(prev => ({ ...prev, category: value }))
-    if (value !== 'Others') setCustomCategory('')
-  }
-
-  // Selecting a product stores its UUID and auto-fills its category
-  // (category is denormalized onto the sample row — same as the create form).
-  const handleProductChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { value } = e.target
-    const product = products.find(p => p.product_id === value)
+  // Single-select checkbox selection: checking any product selects it and unchecks previous
+  const handleProductSelect = (productId: string) => {
     setFormData(prev => ({
       ...prev,
-      product_id: value,
-      category: product?.category || prev.category
+      product_id: prev.product_id === productId ? '' : productId,
     }))
   }
 
-  // Save the edited fields via PATCH /api/samples/:id.
+  const categoryOfProduct = (product: { product_name: string; category: string | null }) =>
+    getCategoryForProduct(product.product_name) || product.category || undefined
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     setError(null)
 
     try {
-      if (!formData.party_name || !formData.product_id || !formData.sample_submission_date) {
-        throw new Error('Please fill in all required fields')
+      if (!formData.party_name.trim()) {
+        throw new Error('Client Name is required')
+      }
+      if (!formData.product_id) {
+        throw new Error('Please select a product')
+      }
+      if (!formData.sample_submission_date) {
+        throw new Error('Sample Submission Date is required')
       }
 
-      // When "Others" is selected, save the typed custom category text (not the
-      // literal string "Others").
-      const categoryToSave =
-        formData.category === 'Others'
-          ? (customCategory.trim() || null)
-          : (formData.category || null)
+      const selectedProduct = products.find(p => p.product_id === formData.product_id)
+      const category = selectedProduct ? (categoryOfProduct(selectedProduct) || null) : null
 
       const res = await fetch(`/api/samples/${sample_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          party_name: formData.party_name,
-          category: categoryToSave,
-          poc_name: formData.poc_name || null,
-          poc_contact: formData.poc_contact || null,
-          designation: formData.designation || null,
+          party_name: formData.party_name.trim(),
+          category,
+          poc_name: formData.poc_name.trim() || null,
+          poc_contact: formData.poc_contact.trim() || null,
+          designation: formData.designation.trim() || null,
           poc_category: formData.poc_category || null,
           product_id: formData.product_id,
           sample_submission_date: formData.sample_submission_date,
           sales_rep_id: formData.sales_rep_id || null,
-          location: formData.location || null,
+          location: formData.location.trim() || null,
           state: formData.state || null,
           next_visit_date: formData.next_visit_date || null,
-          output: formData.output || 'Pending'
-        })
+          output: formData.output || 'Pending',
+        }),
       })
 
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to update sample')
 
-      setSuccess(true)
+      // Return directly to view page
+      router.push(`/samples/${sample_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
-      setSuccess(false)
     } finally {
       setSaving(false)
     }
-  }
-
-  // "Add Another Sample for this Client" — navigates to /samples/create prefilled
-  // with this sample's client/shared info, reusing the create form's query-param
-  // prefill (party_name, location, state, poc_name, poc_contact, designation).
-  const handleAddAnother = () => {
-    const params = new URLSearchParams()
-    params.set('party_name', formData.party_name)
-    if (formData.location) params.set('location', formData.location)
-    if (formData.state) params.set('state', formData.state)
-    if (formData.poc_name) params.set('poc_name', formData.poc_name)
-    if (formData.poc_contact) params.set('poc_contact', formData.poc_contact)
-    if (formData.designation) params.set('designation', formData.designation)
-    router.push(`/samples/create?${params.toString()}`)
   }
 
   if (loading) {
@@ -240,9 +183,6 @@ export default function EditSamplePage() {
         <p className="text-sm">Loading sample...</p>
       </div>
     )
-  }
-  if (error && !formData.party_name) {
-    return <div className="text-center py-24 text-red-500">{error}</div>
   }
 
   return (
@@ -255,24 +195,19 @@ export default function EditSamplePage() {
             </Link>
             <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900 mt-1">Edit Sample</h1>
           </div>
-          <button
-            type="button"
-            onClick={handleAddAnother}
-            className="btn btn-secondary text-sm px-4 py-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Another Sample for {formData.party_name || 'this Client'}
-          </button>
         </div>
       </div>
 
-      {error && <div className="bg-rose-100 border-2 border-rose-400 text-rose-800 px-4 py-3 rounded-md mb-4">{error}</div>}
-      {success && <div className="bg-emerald-100 border-2 border-emerald-400 text-emerald-800 px-4 py-3 rounded-md mb-4">Sample updated successfully!</div>}
+      {error && (
+        <div className="bg-rose-100 border-2 border-rose-400 text-rose-800 px-4 py-3 rounded-md mb-4">
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="max-w-md w-full space-y-6 lg:max-w-5xl">
-        {/* Customer */}
+        {/* Client details */}
         <section className="bg-white rounded-lg p-6">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Customer</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Client</h3>
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="lg:col-span-2">
               <label className="block text-sm font-medium mb-2">Client Name *</label>
@@ -296,72 +231,15 @@ export default function EditSamplePage() {
               >
                 <option value="">Select a sales rep</option>
                 {salesReps.map(rep => (
-                  <option key={rep.user_id} value={rep.user_id}>{rep.user_name}</option>
+                  <option key={rep.user_id} value={rep.user_id}>
+                    {rep.user_name}
+                  </option>
                 ))}
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Category</label>
-              <select
-                name="category"
-                value={formData.category}
-                onChange={handleCategoryChange}
-                className="input"
-              >
-                <option value="">Select a category</option>
-                {categories.map(category => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-                <option value="Others">Others</option>
-              </select>
-              {formData.category === 'Others' && (
-                <input
-                  type="text"
-                  name="custom_category"
-                  value={customCategory}
-                  onChange={e => setCustomCategory(e.target.value)}
-                  placeholder="Type a custom category"
-                  className="input mt-3"
-                />
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Address</label>
-              <input
-                type="text"
-                name="location"
-                value={formData.location}
-                onChange={handleChange}
-                placeholder="Address"
-                className="input"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">State</label>
-              <select
-                name="state"
-                value={formData.state}
-                onChange={handleChange}
-                className="input"
-              >
-                <option value="">Select a state</option>
-                {INDIAN_STATES.map(state => (
-                  <option key={state} value={state}>{state}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </section>
-
-        {/* Point of Contact */}
-        <section className="bg-white rounded-lg p-6">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Point of Contact</h3>
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium mb-2">Name</label>
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">POC Name</label>
               <input
                 type="text"
                 name="poc_name"
@@ -371,8 +249,8 @@ export default function EditSamplePage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Contact (Phone/Email)</label>
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">POC Contact</label>
               <input
                 type="text"
                 name="poc_contact"
@@ -393,7 +271,7 @@ export default function EditSamplePage() {
               />
             </div>
 
-            <div>
+            <div className="lg:col-span-2">
               <label className="block text-sm font-medium mb-2">POC Category</label>
               <select
                 name="poc_category"
@@ -407,31 +285,94 @@ export default function EditSamplePage() {
                 ))}
               </select>
             </div>
-          </div>
-        </section>
 
-        {/* Sample Details */}
-        <section className="bg-white rounded-lg p-6">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">Sample Details</h3>
-          <div className="grid gap-5 lg:grid-cols-2">
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium mb-2">Proposed Product *</label>
+              <label className="block text-sm font-medium mb-2">Location</label>
+              <input
+                type="text"
+                name="location"
+                value={formData.location}
+                onChange={handleChange}
+                className="input"
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium mb-2">State</label>
               <select
-                name="product_id"
-                value={formData.product_id}
-                onChange={handleProductChange}
-                required
+                name="state"
+                value={formData.state}
+                onChange={handleChange}
                 className="input"
               >
-                <option value="">Select a product</option>
-                {products.map(product => (
-                  <option key={product.product_id} value={product.product_id}>
-                    {product.product_name}
-                  </option>
+                <option value="">Select a state</option>
+                {INDIAN_STATES.map(state => (
+                  <option key={state} value={state}>{state}</option>
                 ))}
               </select>
             </div>
+          </div>
+        </section>
 
+        {/* Product Selection (Single-select checkbox grouped by the 4 categories) */}
+        <section className="bg-white rounded-lg p-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">
+            Product Selection *
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {PRODUCT_CATALOG.map(catalogCat => {
+              const catProducts = products.filter(
+                p => categoryOfProduct(p) === catalogCat.category
+              )
+
+              return (
+                <div
+                  key={catalogCat.category}
+                  className="border border-gray-200 rounded-md p-3.5 bg-gray-50/50"
+                >
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 pb-2 mb-2 border-b border-gray-200">
+                    {catalogCat.category}
+                  </h4>
+                  <div className="space-y-2">
+                    {catProducts.length > 0 ? (
+                      catProducts.map(product => {
+                        const isChecked = formData.product_id === product.product_id
+                        return (
+                          <label
+                            key={product.product_id}
+                            className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900 select-none"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleProductSelect(product.product_id)}
+                              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span>{product.product_name}</span>
+                          </label>
+                        )
+                      })
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">No products</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {!formData.product_id && (
+            <p className="mt-2 text-xs text-rose-600">
+              Please select a product.
+            </p>
+          )}
+        </section>
+
+        {/* Dates and Status */}
+        <section className="bg-white rounded-lg p-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">
+            Dates & Status
+          </h3>
+          <div className="grid gap-5 lg:grid-cols-2">
             <div>
               <label className="block text-sm font-medium mb-2">Sample Submission Date *</label>
               <input
@@ -471,56 +412,24 @@ export default function EditSamplePage() {
           </div>
         </section>
 
-        <div className="p-2">
+        {/* Action buttons: Cancel & Save Changes */}
+        <div className="mt-6 flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={() => router.push(`/samples/${sample_id}`)}
+            className="btn btn-outline"
+          >
+            Cancel
+          </button>
           <button
             type="submit"
             disabled={saving}
-            className="btn btn-primary w-full text-base px-4 py-3"
+            className="btn btn-primary"
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </form>
-
-      {/* Previous Samples for this Client — read-only list, links out to each sample's own page */}
-      <section className="bg-white rounded-lg p-6 mt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-6">
-          Previous Samples for {formData.party_name || 'this Client'}
-        </h3>
-        {previousSamples.length === 0 ? (
-          <p className="text-gray-500 text-sm">No other samples for this client yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {previousSamples.map(s => (
-              <div
-                key={s.sample_id}
-                className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
-              >
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-                  <span className="font-medium text-gray-900">{s.product?.product_name || '—'}</span>
-                  <span className="text-gray-600">Category: {s.category || '—'}</span>
-                  <span className="text-gray-600">Submitted: {formatDate(s.sample_submission_date)}</span>
-                  <span className="text-gray-600">Status: {s.output || '—'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/samples/${s.sample_id}`}
-                    className="btn btn-secondary text-sm px-3 py-1.5"
-                  >
-                    View
-                  </Link>
-                  <Link
-                    href={`/samples/${s.sample_id}/edit`}
-                    className="btn btn-secondary text-sm px-3 py-1.5"
-                  >
-                    Edit
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   )
 }
