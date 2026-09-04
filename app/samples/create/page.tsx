@@ -366,52 +366,43 @@ function CreateSampleForm() {
               )}
             </div>
 
-            {/* Checkbox product list grouped by the 4 categories */}
+            {/* Checkbox product list grouped by the 4 categories in canonical catalog order */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-900 mb-3">
                 Select Products *
               </label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {PRODUCT_CATALOG.map(catalogCat => {
-                  // Find matching products from DB
-                  const catProducts = products.filter(
-                    p => categoryOfProduct(p) === catalogCat.category
-                  )
-
-                  return (
-                    <div
-                      key={catalogCat.category}
-                      className="border border-gray-200 rounded-md p-3.5 bg-gray-50/50"
-                    >
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 pb-2 mb-2 border-b border-gray-200">
-                        {catalogCat.category}
-                      </h4>
-                      <div className="space-y-2">
-                        {catProducts.length > 0 ? (
-                          catProducts.map(product => {
-                            const isChecked = block.product_ids.includes(product.product_id)
-                            return (
-                              <label
-                                key={product.product_id}
-                                className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900 select-none"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => handleProductToggle(index, product.product_id)}
-                                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span>{product.product_name}</span>
-                              </label>
-                            )
-                          })
-                        ) : (
-                          <span className="text-xs text-gray-400 italic">No products</span>
-                        )}
-                      </div>
+                {PRODUCT_CATALOG.map(catalogCat => (
+                  <div
+                    key={catalogCat.category}
+                    className="border border-gray-200 rounded-md p-3.5 bg-gray-50/50"
+                  >
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 pb-2 mb-2 border-b border-gray-200">
+                      {catalogCat.category}
+                    </h4>
+                    <div className="space-y-2">
+                      {catalogCat.products.map(productName => {
+                        const product = products.find(p => p.product_name === productName)
+                        if (!product) return null
+                        const isChecked = block.product_ids.includes(product.product_id)
+                        return (
+                          <label
+                            key={product.product_id}
+                            className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900 select-none"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleProductToggle(index, product.product_id)}
+                              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span>{product.product_name}</span>
+                          </label>
+                        )
+                      })}
                     </div>
-                  )
-                })}
+                  </div>
+                ))}
               </div>
               {block.product_ids.length === 0 && (
                 <p className="mt-2 text-xs text-gray-500">

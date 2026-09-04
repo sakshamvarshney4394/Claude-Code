@@ -10,7 +10,7 @@ export interface CatalogCategory {
 export const PRODUCT_CATALOG: CatalogCategory[] = [
   {
     category: 'Indian Chutney',
-    products: ['KMC', 'DPC', 'Date and Tamarind', 'Saunth'],
+    products: ['KMC', 'DPC', 'Date and Tamarind', 'Saunth Chutney'],
   },
   {
     category: 'Mayonnaise',
