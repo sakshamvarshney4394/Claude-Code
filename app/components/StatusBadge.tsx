@@ -12,6 +12,7 @@ const STATUS_STYLES: Record<string, string> = {
   Onboard: 'bg-emerald-500 text-white',
   'Not Interested': 'bg-rose-100 text-rose-800',
   'Interested but need time': 'bg-sky-100 text-sky-800',
+  Mixed: 'bg-purple-100 text-purple-800',
 }
 
 // Operational wording, used on /samples and the sample detail page — the screens
@@ -21,6 +22,7 @@ const DISPLAY_TEXT: Record<string, string> = {
   Onboard: 'Onboarded Client',
   'Not Interested': 'Not Interested',
   'Interested but need time': 'Interested but need time',
+  Mixed: 'Mixed',
 }
 
 // Analytics used to speak plainer than the rest of the app ("Became clients", not

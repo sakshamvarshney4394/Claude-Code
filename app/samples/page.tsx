@@ -6,29 +6,9 @@ import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import StatusBadge from '@/app/components/StatusBadge'
 import { formatDate } from '@/lib/format'
-import { formatSampleNumber, computeSerialMap } from '@/lib/sampleNumber'
+import { computeSerialMap } from '@/lib/sampleNumber'
+import { groupSamples, Sample, GroupedSample } from '@/lib/groupSamples'
 import { Download, Plus, Search, SearchX, FilterX, Inbox } from 'lucide-react'
-
-type Sample = {
-  sample_id: string
-  party_name: string
-  location: string | null
-  product: {
-    product_name: string
-    variant_name: string | null
-  } | null
-  sales_rep: {
-    user_name: string
-  } | null
-  sample_submission_date: string | null
-  visits: Array<{
-    visit_id: string
-    visit_number: number
-    visit_date: string
-    feedback: string | null
-  }> | null
-  output: string
-}
 
 export default function SamplesPage() {
   const router = useRouter()
@@ -58,16 +38,52 @@ export default function SamplesPage() {
     fetchSamples()
   }, [])
 
-  // Export current samples to an .xlsx file, client-side only.
+  // Serial numbers are computed from the full creation-order list of individual samples
+  const { serialBySampleId, totalCount } = useMemo(
+    () => computeSerialMap(samples),
+    [samples]
+  )
+
+  // Group samples sharing (party_name + sample_submission_date) into one visual row
+  const groupedSamples = useMemo(
+    () => groupSamples(samples, serialBySampleId, totalCount),
+    [samples, serialBySampleId, totalCount]
+  )
+
+  // Filter grouped rows by search query and date
+  const filteredGroups = useMemo(() => {
+    const q = search.trim().toLowerCase()
+
+    return groupedSamples.filter(group => {
+      const textMatch =
+        !q ||
+        group.party_name.toLowerCase().includes(q) ||
+        (group.sales_rep?.user_name ?? '').toLowerCase().includes(q) ||
+        group.proposed_products_text.toLowerCase().includes(q)
+
+      const dateMatch =
+        !dateFilter ||
+        (group.sample_submission_date
+          ? group.sample_submission_date.slice(0, 10) === dateFilter
+          : false)
+
+      return textMatch && dateMatch
+    })
+  }, [groupedSamples, search, dateFilter])
+
+  // Export current grouped samples to an .xlsx file, client-side only.
   function handleExport() {
-    const rows = samples.map(s => ({
-      'Sample ID': formatSampleNumber(serialBySampleId.get(s.sample_id) ?? 0, totalCount),
-      'Client Name': s.party_name,
-      'Proposed Product': s.product?.product_name || '—',
-      'Sales Representative': s.sales_rep?.user_name || '—',
-      'Submitted': s.sample_submission_date ? new Date(s.sample_submission_date).toISOString().slice(0, 10) : '—',
-      'Visits': s.visits?.length || 0,
-      'Status': s.output,
+    const rows = filteredGroups.map(g => ({
+      'Sample ID': g.sample_id_display,
+      'Client Name': g.party_name,
+      'Proposed Product': g.proposed_products_text || '—',
+      'Sales Representative': g.sales_rep?.user_name || '—',
+      'Address': g.location || '—',
+      'Submitted': g.sample_submission_date
+        ? new Date(g.sample_submission_date).toISOString().slice(0, 10)
+        : '—',
+      'Visits': g.total_visits,
+      'Status': g.status,
     }))
 
     const ws = XLSX.utils.json_to_sheet(rows)
@@ -83,27 +99,6 @@ export default function SamplesPage() {
   }
 
   const hasFilters = search.trim() !== '' || dateFilter !== ''
-
-  // Serial numbers are computed from the full creation-order list
-  const { serialBySampleId, totalCount } = useMemo(
-    () => computeSerialMap(samples),
-    [samples]
-  )
-
-  const filteredSamples = samples.filter(s => {
-    const q = search.trim().toLowerCase()
-    const textMatch =
-      !q ||
-      s.party_name.toLowerCase().includes(q) ||
-      (s.product?.product_name ?? '').toLowerCase().includes(q) ||
-      (s.sales_rep?.user_name ?? '').toLowerCase().includes(q)
-
-    const dateMatch =
-      !dateFilter ||
-      (s.sample_submission_date ? s.sample_submission_date.slice(0, 10) === dateFilter : false)
-
-    return textMatch && dateMatch
-  })
 
   if (loading) {
     return (
@@ -123,7 +118,7 @@ export default function SamplesPage() {
     )
   }
 
-  // Stats row
+  // Stats row (computed from individual underlying sample rows)
   const pendingCount = samples.filter(s => s.output === 'Pending').length
   const onboardCount = samples.filter(s => s.output === 'Onboard').length
 
@@ -140,7 +135,7 @@ export default function SamplesPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleExport}
-            disabled={samples.length === 0}
+            disabled={filteredGroups.length === 0}
             className="btn btn-secondary text-sm px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Download className="w-4 h-4" />
@@ -216,7 +211,7 @@ export default function SamplesPage() {
           </div>
 
           {/* No-results state */}
-          {filteredSamples.length === 0 ? (
+          {filteredGroups.length === 0 ? (
             <div className="text-center py-20 bg-white rounded-lg">
               <SearchX className="w-12 h-12 mx-auto text-gray-300 mb-3" />
               <p className="text-gray-500">No samples match your filters.</p>
@@ -244,27 +239,28 @@ export default function SamplesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredSamples.map(sample => (
+                      {filteredGroups.map(group => (
                         <tr
-                          key={sample.sample_id}
-                          onClick={() => router.push(`/samples/${sample.sample_id}`)}
+                          key={group.groupKey}
+                          onClick={() => router.push(`/samples/${group.primary_sample_id}`)}
                           className="hover:bg-blue-50/50 cursor-pointer transition-colors"
                         >
-                          <td className="px-6 py-4 font-medium text-gray-900">
-                            {formatSampleNumber(serialBySampleId.get(sample.sample_id) ?? 0, totalCount)}
+                          <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                            {group.sample_id_display}
                           </td>
-                          <td className="px-6 py-4 text-gray-900 font-medium">{sample.party_name}</td>
+                          <td className="px-6 py-4 text-gray-900 font-medium">{group.party_name}</td>
                           <td className="px-6 py-4 text-gray-700">
-                            {sample.product?.product_name || '—'}
-                            {sample.product?.variant_name ? ` (${sample.product.variant_name})` : ''}
+                            {group.proposed_products_text || '—'}
                           </td>
-                          <td className="px-6 py-4 text-gray-700">{sample.sales_rep?.user_name || '—'}</td>
-                          <td className="px-6 py-4 text-gray-700">{sample.location || '—'}</td>
-                          <td className="px-6 py-4 text-gray-600">
-                            {formatDate(sample.sample_submission_date)}
+                          <td className="px-6 py-4 text-gray-700">{group.sales_rep?.user_name || '—'}</td>
+                          <td className="px-6 py-4 text-gray-700">{group.location || '—'}</td>
+                          <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
+                            {formatDate(group.sample_submission_date)}
                           </td>
-                          <td className="px-6 py-4 text-gray-600">{sample.visits?.length || 0}</td>
-                          <td className="px-6 py-4"><StatusBadge status={sample.output} /></td>
+                          <td className="px-6 py-4 text-gray-600">{group.total_visits}</td>
+                          <td className="px-6 py-4">
+                            <StatusBadge status={group.status} />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -274,44 +270,43 @@ export default function SamplesPage() {
 
               {/* Mobile stacked cards (<768px) — clicking card navigates directly to view page */}
               <div className="md:hidden space-y-4">
-                {filteredSamples.map(sample => (
+                {filteredGroups.map(group => (
                   <div
-                    key={sample.sample_id}
-                    onClick={() => router.push(`/samples/${sample.sample_id}`)}
+                    key={group.groupKey}
+                    onClick={() => router.push(`/samples/${group.primary_sample_id}`)}
                     className="card p-5 hover:border-blue-300 transition-colors cursor-pointer"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div>
-                        <h3 className="font-semibold text-gray-900 truncate">{sample.party_name}</h3>
+                        <h3 className="font-semibold text-gray-900 truncate">{group.party_name}</h3>
                         <p className="text-xs text-gray-400 font-mono mt-0.5">
-                          {formatSampleNumber(serialBySampleId.get(sample.sample_id) ?? 0, totalCount)}
+                          {group.sample_id_display}
                         </p>
                       </div>
-                      <StatusBadge status={sample.output} />
+                      <StatusBadge status={group.status} />
                     </div>
                     <dl className="space-y-2 text-sm">
                       <div className="flex justify-between gap-4">
                         <dt className="text-gray-500">Proposed Product</dt>
-                        <dd className="font-medium text-gray-900 truncate">
-                          {sample.product?.product_name || '—'}
-                          {sample.product?.variant_name ? ` (${sample.product.variant_name})` : ''}
+                        <dd className="font-medium text-gray-900 text-right">
+                          {group.proposed_products_text || '—'}
                         </dd>
                       </div>
                       <div className="flex justify-between gap-4">
                         <dt className="text-gray-500">Sales Representative</dt>
-                        <dd className="font-medium text-gray-900">{sample.sales_rep?.user_name || '—'}</dd>
+                        <dd className="font-medium text-gray-900">{group.sales_rep?.user_name || '—'}</dd>
                       </div>
                       <div className="flex justify-between gap-4">
                         <dt className="text-gray-500">Address</dt>
-                        <dd className="font-medium text-gray-900 truncate">{sample.location || '—'}</dd>
+                        <dd className="font-medium text-gray-900 truncate">{group.location || '—'}</dd>
                       </div>
                       <div className="flex justify-between gap-4">
                         <dt className="text-gray-500">Submitted</dt>
-                        <dd className="text-gray-900">{formatDate(sample.sample_submission_date)}</dd>
+                        <dd className="text-gray-900">{formatDate(group.sample_submission_date)}</dd>
                       </div>
                       <div className="flex justify-between gap-4">
                         <dt className="text-gray-500">Visits</dt>
-                        <dd className="text-gray-900">{sample.visits?.length || 0}</dd>
+                        <dd className="text-gray-900">{group.total_visits}</dd>
                       </div>
                     </dl>
                   </div>

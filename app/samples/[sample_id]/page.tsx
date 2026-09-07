@@ -1,140 +1,174 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import StatusBadge from '@/app/components/StatusBadge'
 import { formatDate } from '@/lib/format'
 import { formatSampleNumber, computeSerialMap } from '@/lib/sampleNumber'
-import { Package, UserRound, Activity, Pencil, Trash2 } from 'lucide-react'
+import { Sample } from '@/lib/groupSamples'
+import { Package, UserRound, Activity, Pencil, Trash2, Calendar, MapPin, Building2, User, Phone, Briefcase } from 'lucide-react'
 
 export default function SampleDetailPage() {
   const { sample_id } = useParams<{ sample_id: string }>()
   const router = useRouter()
 
-  const [sample, setSample] = useState<any>(null)
+  const [allSamples, setAllSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
-  const [deleting, setDeleting] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Display-only sequential sample number + total count
-  const [serialNumber, setSerialNumber] = useState<number | null>(null)
-  const [totalCount, setTotalCount] = useState(0)
+  // Controlled form state for adding visits keyed by sample_id
+  const [visitForms, setVisitForms] = useState<Record<string, { date: string; feedback: string }>>({})
 
-  // Shared loader: fetch one sample with its joins from the API route.
-  const loadSample = async (id: string) => {
-    const res = await fetch(`/api/samples/${id}`)
-    const json = await res.json()
-    if (!res.ok) throw new Error(json.error || 'Failed to load sample')
-    return json.data
+  // Fetch all samples to compute serial numbers and group related samples
+  const fetchAll = async () => {
+    try {
+      const res = await fetch('/api/samples')
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to load samples')
+      setAllSamples(json.data || [])
+      return json.data || []
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load samples')
+      return []
+    }
   }
 
-  // Fetch sample data
   useEffect(() => {
     if (!sample_id) return
 
-    const fetchSample = async () => {
-      try {
-        setLoading(true)
-        const data = await loadSample(sample_id)
-        setSample(data)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load sample')
-        if (err instanceof Error && err.message.includes('not found')) {
-          router.push('/samples')
-        }
-      } finally {
-        setLoading(false)
+    const init = async () => {
+      setLoading(true)
+      const data = await fetchAll()
+      const found = data.find((s: Sample) => s.sample_id === sample_id)
+      if (!found && data.length > 0) {
+        // Sample id not found in active list
+        router.push('/samples')
       }
+      setLoading(false)
     }
 
-    fetchSample()
+    init()
   }, [sample_id, router])
 
-  // Compute this sample's display serial number + total count
-  useEffect(() => {
-    if (!sample_id) return
-    let aborted = false
-    const compute = async () => {
-      try {
-        const res = await fetch('/api/samples')
-        if (!res.ok) return
-        const json = await res.json()
-        const all = json.data || []
-        const { serialBySampleId, totalCount: total } = computeSerialMap(all)
-        if (aborted) return
-        setSerialNumber(serialBySampleId.get(sample_id) ?? null)
-        setTotalCount(total)
-      } catch {
-        // Non-fatal
-      }
-    }
-    compute()
-    return () => {
-      aborted = true
-    }
-  }, [sample_id])
+  const { serialBySampleId, totalCount } = useMemo(
+    () => computeSerialMap(allSamples),
+    [allSamples]
+  )
 
-  // Delete sample and its visits
-  const handleDelete = async () => {
-    if (!window.confirm('Delete this sample and all its visit history? This cannot be undone.')) {
+  const currentSample = allSamples.find(s => s.sample_id === sample_id)
+
+  // Find all samples in the same group (same party_name + same sample_submission_date)
+  const groupSamples = useMemo(() => {
+    if (!currentSample) return []
+    const currentDate = currentSample.sample_submission_date
+      ? currentSample.sample_submission_date.slice(0, 10)
+      : ''
+    return allSamples.filter(s => {
+      const sDate = s.sample_submission_date ? s.sample_submission_date.slice(0, 10) : ''
+      return s.party_name === currentSample.party_name && sDate === currentDate
+    })
+  }, [allSamples, currentSample])
+
+  // Overall group status
+  const groupStatus = useMemo(() => {
+    if (!groupSamples.length) return 'Pending'
+    const statuses = Array.from(new Set(groupSamples.map(s => s.output || 'Pending')))
+    return statuses.length === 1 ? statuses[0] : 'Mixed'
+  }, [groupSamples])
+
+  // Group serial number display (e.g. 0012–0014 or 0012)
+  const groupSerialDisplay = useMemo(() => {
+    if (!groupSamples.length) return ''
+    const serials = groupSamples
+      .map(s => serialBySampleId.get(s.sample_id) ?? 0)
+      .filter(n => n > 0)
+    if (!serials.length) return ''
+    const min = Math.min(...serials)
+    const max = Math.max(...serials)
+    return min === max
+      ? `Sample #${formatSampleNumber(min, totalCount)}`
+      : `Sample #${formatSampleNumber(min, totalCount)}–${formatSampleNumber(max, totalCount)}`
+  }, [groupSamples, serialBySampleId, totalCount])
+
+  // Delete handler for any sample
+  const handleDelete = async (targetId: string, productName?: string) => {
+    const label = productName ? `"${productName}"` : 'this sample'
+    if (!window.confirm(`Delete ${label} and all its visit history? This cannot be undone.`)) {
       return
     }
 
     try {
-      setDeleting(true)
-      const res = await fetch(`/api/samples/${sample_id}`, {
+      setActionLoading(true)
+      const res = await fetch(`/api/samples/${targetId}`, {
         method: 'DELETE',
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to delete sample')
-      router.push('/samples')
+
+      const remainingInGroup = groupSamples.filter(s => s.sample_id !== targetId)
+      if (remainingInGroup.length === 0) {
+        router.push('/samples')
+      } else {
+        if (targetId === sample_id) {
+          router.replace(`/samples/${remainingInGroup[0].sample_id}`)
+        }
+        await fetchAll()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete sample')
-      setDeleting(false)
+    } finally {
+      setActionLoading(false)
     }
   }
 
-  // Handle adding a visit
-  const handleAddVisit = async (e: React.FormEvent) => {
+  // Add visit handler for any sample
+  const handleAddVisit = async (targetId: string, e: React.FormEvent) => {
     e.preventDefault()
+    const form = visitForms[targetId] || { date: '', feedback: '' }
 
-    const visitDateInput = document.getElementById('visit-date') as HTMLInputElement | null
-    const feedbackInput = document.getElementById('visit-feedback') as HTMLTextAreaElement | null
-
-    if (!visitDateInput || !feedbackInput) {
-      setError('Form elements not found')
-      return
-    }
-
-    const visitDate = visitDateInput.value
-    const feedback = feedbackInput.value
-
-    if (!visitDate) {
-      setError('Please enter a visit date')
+    if (!form.date) {
+      alert('Please select a visit date')
       return
     }
 
     try {
+      setActionLoading(true)
       const res = await fetch('/api/visits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sample_id,
-          visit_date: visitDate,
-          feedback: feedback || null,
+          sample_id: targetId,
+          visit_date: form.date,
+          feedback: form.feedback || null,
         }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to add visit')
 
-      visitDateInput.value = ''
-      feedbackInput.value = ''
+      // Clear input state for this sample
+      setVisitForms(prev => ({
+        ...prev,
+        [targetId]: { date: '', feedback: '' },
+      }))
 
-      setSample(await loadSample(sample_id))
+      await fetchAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setActionLoading(false)
     }
+  }
+
+  const updateVisitField = (targetId: string, field: 'date' | 'feedback', value: string) => {
+    setVisitForms(prev => ({
+      ...prev,
+      [targetId]: {
+        ...(prev[targetId] || { date: '', feedback: '' }),
+        [field]: value,
+      },
+    }))
   }
 
   if (loading) {
@@ -145,8 +179,9 @@ export default function SampleDetailPage() {
       </div>
     )
   }
+
   if (error) return <div className="text-center py-24 text-red-500">{error}</div>
-  if (!sample) return <div className="text-center py-24 text-gray-500">No sample found</div>
+  if (!currentSample) return <div className="text-center py-24 text-gray-500">No sample found</div>
 
   const infoRow = (label: string, value: string) => (
     <div className="py-2.5 flex justify-between items-start gap-4 border-b border-gray-50 last:border-0">
@@ -154,6 +189,213 @@ export default function SampleDetailPage() {
       <span className="text-sm font-medium text-gray-900 text-right">{value}</span>
     </div>
   )
+
+  // ----------------------------------------------------------------------------------
+  // MULTI-PRODUCT GROUP VIEW (groupSamples.length > 1)
+  // ----------------------------------------------------------------------------------
+  if (groupSamples.length > 1) {
+    return (
+      <div className="py-6 space-y-6">
+        {/* Header */}
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <Link href="/samples" className="text-sm text-gray-500 hover:text-gray-700">
+                ← Back to All Samples
+              </Link>
+              <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900 mt-1">
+                {currentSample.party_name}
+              </h1>
+              <p className="text-xs text-gray-400 mt-0.5 font-mono">
+                {groupSerialDisplay} • {groupSamples.length} Products Group
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={groupStatus} />
+            </div>
+          </div>
+        </div>
+
+        {/* Client Info Card (shown once at top) */}
+        <div className="card p-6">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <span className="w-8 h-8 rounded-md bg-gray-100 text-emerald-500 flex items-center justify-center">
+              <UserRound className="w-4 h-4" />
+            </span>
+            Client & Sales Representative Details
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Sales Rep</p>
+              <p className="text-sm font-medium text-gray-900 mt-1">
+                {currentSample.sales_rep?.user_name || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Point of Contact</p>
+              <p className="text-sm font-medium text-gray-900 mt-1">
+                {currentSample.poc_name || '—'} {currentSample.designation ? `(${currentSample.designation})` : ''}
+              </p>
+              {currentSample.poc_contact && (
+                <p className="text-xs text-gray-500 mt-0.5">{currentSample.poc_contact}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Address / State</p>
+              <p className="text-sm font-medium text-gray-900 mt-1">
+                {currentSample.location || 'Not specified'}
+              </p>
+              {currentSample.state && (
+                <p className="text-xs text-gray-500 mt-0.5">{currentSample.state}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Dates</p>
+              <p className="text-sm font-medium text-gray-900 mt-1">
+                Submitted: {formatDate(currentSample.sample_submission_date)}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Next Visit: {formatDate(currentSample.next_visit_date) === '—' ? 'None scheduled' : formatDate(currentSample.next_visit_date)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section: Proposed Products */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <Package className="w-5 h-5 text-blue-500" />
+              Proposed Products ({groupSamples.length})
+            </h2>
+          </div>
+
+          <div className="space-y-6">
+            {groupSamples.map(item => {
+              const itemSerial = serialBySampleId.get(item.sample_id)
+              const form = visitForms[item.sample_id] || { date: '', feedback: '' }
+
+              return (
+                <div key={item.sample_id} className="card p-6 space-y-6">
+                  {/* Product Header & Actions */}
+                  <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-gray-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-gray-900">
+                          {item.product?.product_name || '—'}
+                          {item.product?.variant_name ? ` (${item.product.variant_name})` : ''}
+                        </h3>
+                        <StatusBadge status={item.output} />
+                      </div>
+                      <p className="text-xs text-gray-500 font-mono mt-1">
+                        {itemSerial ? `Sample #${formatSampleNumber(itemSerial, totalCount)}` : item.sample_id} • Category: {item.category || item.product?.category || '—'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/samples/${item.sample_id}/edit`}
+                        className="btn btn-secondary text-sm px-3.5 py-1.5 inline-flex items-center gap-1.5"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(item.sample_id, item.product?.product_name)}
+                        disabled={actionLoading}
+                        className="btn btn-secondary text-sm px-3.5 py-1.5 inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Visits & Add Visit for this product */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Follow-up Visits */}
+                    <div className="bg-gray-50/50 rounded-lg p-4 border border-gray-100">
+                      <h4 className="text-sm font-bold text-gray-900 mb-3">
+                        Follow-up Visits ({item.visits?.length || 0})
+                      </h4>
+                      {!item.visits || item.visits.length === 0 ? (
+                        <p className="text-gray-500 text-sm py-4">No visits recorded yet.</p>
+                      ) : (
+                        <div className="divide-y divide-gray-200 max-h-56 overflow-y-auto space-y-3">
+                          {item.visits.map(visit => (
+                            <div key={visit.visit_id} className="pt-3 first:pt-0">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-semibold text-gray-900 bg-white border border-gray-200 rounded px-2 py-0.5">
+                                  Visit #{visit.visit_number}
+                                </span>
+                                <span className="text-gray-500">
+                                  {formatDate(visit.visit_date)}
+                                </span>
+                              </div>
+                              <p className="mt-1.5 text-gray-700 text-sm">
+                                {visit.feedback || 'No feedback provided'}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Add Follow-up Visit Form */}
+                    <div className="bg-gray-50/50 rounded-lg p-4 border border-gray-100">
+                      <h4 className="text-sm font-bold text-gray-900 mb-3">
+                        Add Follow-up Visit
+                      </h4>
+                      <form onSubmit={e => handleAddVisit(item.sample_id, e)} className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Visit Date *
+                          </label>
+                          <input
+                            type="date"
+                            value={form.date}
+                            onChange={e => updateVisitField(item.sample_id, 'date', e.target.value)}
+                            className="input text-sm py-1.5"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Feedback (Notes)
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={form.feedback}
+                            onChange={e => updateVisitField(item.sample_id, 'feedback', e.target.value)}
+                            className="input text-sm py-1.5"
+                            placeholder="Enter notes..."
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={actionLoading}
+                          className="btn btn-primary w-full text-sm py-2"
+                        >
+                          Add Visit
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ----------------------------------------------------------------------------------
+  // SINGLE-PRODUCT SAMPLE VIEW (groupSamples.length === 1 or fallback)
+  // Exactly behaves as existing view
+  // ----------------------------------------------------------------------------------
+  const serialNumber = serialBySampleId.get(currentSample.sample_id) ?? null
+  const singleForm = visitForms[currentSample.sample_id] || { date: '', feedback: '' }
 
   return (
     <div className="py-6 space-y-6">
@@ -164,27 +406,31 @@ export default function SampleDetailPage() {
             <Link href="/samples" className="text-sm text-gray-500 hover:text-gray-700">
               ← Back to All Samples
             </Link>
-            <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900 mt-1">{sample.party_name}</h1>
+            <h1 className="text-2xl font-bold tracking-[-0.02em] text-gray-900 mt-1">
+              {currentSample.party_name}
+            </h1>
             <p className="text-xs text-gray-400 mt-0.5 font-mono">
-              {serialNumber ? `Sample #${formatSampleNumber(serialNumber, totalCount)}` : sample.sample_id}
+              {serialNumber
+                ? `Sample #${formatSampleNumber(serialNumber, totalCount)}`
+                : currentSample.sample_id}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={sample.output} />
+            <StatusBadge status={currentSample.output} />
             <Link
-              href={`/samples/${sample_id}/edit`}
+              href={`/samples/${currentSample.sample_id}/edit`}
               className="btn btn-secondary text-sm px-4 py-2 inline-flex items-center gap-1.5"
             >
               <Pencil className="w-4 h-4" />
               Edit
             </Link>
             <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="btn btn-secondary text-sm px-4 py-2 inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={() => handleDelete(currentSample.sample_id, currentSample.product?.product_name)}
+              disabled={actionLoading}
+              className="btn btn-secondary text-sm px-4 py-2 inline-flex items-center gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
             >
               <Trash2 className="w-4 h-4" />
-              {deleting ? 'Deleting...' : 'Delete'}
+              {actionLoading ? 'Processing...' : 'Delete'}
             </button>
           </div>
         </div>
@@ -200,9 +446,9 @@ export default function SampleDetailPage() {
             Product
           </h3>
           <div>
-            {infoRow('Proposed Product', sample.product?.product_name || '—')}
-            {infoRow('Category', sample.category || '—')}
-            {infoRow('POC Category', sample.poc_category || '—')}
+            {infoRow('Proposed Product', currentSample.product?.product_name || '—')}
+            {infoRow('Category', currentSample.category || currentSample.product?.category || '—')}
+            {infoRow('POC Category', currentSample.poc_category || '—')}
           </div>
         </div>
 
@@ -214,14 +460,19 @@ export default function SampleDetailPage() {
             Sales & Client
           </h3>
           <div>
-            {infoRow('Sales Representative', sample.sales_rep?.user_name || '—')}
-            {infoRow('POC Name', sample.poc_name || '—')}
-            {infoRow('POC Contact', sample.poc_contact || '—')}
-            {infoRow('Designation', sample.designation || '—')}
-            {infoRow('Address', sample.location || 'Not specified')}
-            {infoRow('State', sample.state || '—')}
-            {infoRow('Submitted', formatDate(sample.sample_submission_date))}
-            {infoRow('Next Visit', formatDate(sample.next_visit_date) === '—' ? 'None scheduled' : formatDate(sample.next_visit_date))}
+            {infoRow('Sales Representative', currentSample.sales_rep?.user_name || '—')}
+            {infoRow('POC Name', currentSample.poc_name || '—')}
+            {infoRow('POC Contact', currentSample.poc_contact || '—')}
+            {infoRow('Designation', currentSample.designation || '—')}
+            {infoRow('Address', currentSample.location || 'Not specified')}
+            {infoRow('State', currentSample.state || '—')}
+            {infoRow('Submitted', formatDate(currentSample.sample_submission_date))}
+            {infoRow(
+              'Next Visit',
+              formatDate(currentSample.next_visit_date) === '—'
+                ? 'None scheduled'
+                : formatDate(currentSample.next_visit_date)
+            )}
           </div>
         </div>
 
@@ -233,8 +484,8 @@ export default function SampleDetailPage() {
             Status
           </h3>
           <div>
-            {infoRow('Current Status', sample.output || 'Pending')}
-            {infoRow('Visits Count', String(sample.visits?.length || 0))}
+            {infoRow('Current Status', currentSample.output || 'Pending')}
+            {infoRow('Visits Count', String(currentSample.visits?.length || 0))}
           </div>
         </div>
       </div>
@@ -246,11 +497,11 @@ export default function SampleDetailPage() {
             <h2 className="text-lg font-bold text-gray-900">Follow-up Visits</h2>
           </div>
 
-          {!sample.visits || sample.visits.length === 0 ? (
+          {!currentSample.visits || currentSample.visits.length === 0 ? (
             <p className="text-gray-500 p-6">No visits recorded yet.</p>
           ) : (
             <div className="divide-y divide-gray-100">
-              {sample.visits.map((visit: any) => (
+              {currentSample.visits.map(visit => (
                 <div key={visit.visit_id} className="px-6 py-4">
                   <div className="flex justify-between items-start">
                     <span className="font-semibold text-gray-900 text-sm bg-gray-100 rounded-md px-2 py-0.5">
@@ -271,27 +522,31 @@ export default function SampleDetailPage() {
           <div className="px-6 py-4 border-b border-gray-100">
             <h2 className="text-lg font-bold text-gray-900">Add Follow-up Visit</h2>
           </div>
-          <form className="p-6 space-y-4" onSubmit={handleAddVisit}>
+          <form className="p-6 space-y-4" onSubmit={e => handleAddVisit(currentSample.sample_id, e)}>
             <div>
               <label className="block text-sm font-medium mb-2">Visit Date *</label>
               <input
                 type="date"
-                id="visit-date"
+                value={singleForm.date}
+                onChange={e => updateVisitField(currentSample.sample_id, 'date', e.target.value)}
                 className="input"
+                required
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-2">Feedback (Notes)</label>
               <textarea
-                id="visit-feedback"
                 rows={4}
+                value={singleForm.feedback}
+                onChange={e => updateVisitField(currentSample.sample_id, 'feedback', e.target.value)}
                 className="input"
               ></textarea>
             </div>
 
             <button
               type="submit"
+              disabled={actionLoading}
               className="btn btn-primary w-full px-4 py-2.5 text-base mt-2"
             >
               Add Visit
